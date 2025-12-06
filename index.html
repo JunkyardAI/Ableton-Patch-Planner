@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ableton Live | Systems Planner (Ultimate)</title>
+    
+    <!-- Dependencies -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
+    <!-- Theme Config -->
+    <style id="theme-style">
+        :root {
+            --bg-color: #1e1e1e;
+            --panel-color: #282828;
+            --header-color: #4a4a4a;
+            --text-color: #dcdcdc;
+            --accent-color: #ff764d;
+            --selection-color: #00d2be;
+            --border-color: #111;
+            --error-color: #ff4d4d;
+            --success-color: #4dff88;
+        }
+    </style>
+    
+    <style>
+        /* BASE STYLES */
+        body { background-color: var(--bg-color); color: var(--text-color); overflow: hidden; user-select: none; font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-color); }
+        ::-webkit-scrollbar-thumb { background: var(--header-color); border-radius: 4px; }
+        
+        /* UTILS */
+        canvas { display: block; outline: none; }
+        .cursor-grab { cursor: grab; }
+        .cursor-grabbing { cursor: grabbing; }
+        
+        /* COMPONENTS */
+        .bg-panel { background-color: var(--panel-color); }
+        .bg-header { background-color: var(--header-color); }
+        .text-accent { color: var(--accent-color); }
+        .border-main { border-color: var(--border-color); }
+        
+        .cat-header { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #929292; padding: 12px 12px 4px; letter-spacing: 0.05em; }
+        .device-item { padding: 6px 12px; cursor: pointer; font-size: 12px; border-left: 2px solid transparent; }
+        .device-item:hover { background-color: #3a3a3a; border-left-color: #929292; }
+        
+        /* CONTEXT MENU */
+        #context-menu { position: fixed; background: #222; border: 1px solid #444; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 1000; min-width: 150px; border-radius: 4px; padding: 4px 0; }
+        .ctx-item { padding: 6px 12px; font-size: 11px; cursor: pointer; color: #ddd; display: flex; justify-content: space-between; }
+        .ctx-item:hover { background: var(--accent-color); color: #000; }
+        .ctx-divider { height: 1px; background: #444; margin: 4px 0; }
+        
+        /* HELPER ENGINE STYLES */
+        .helper-inject-target { transition: outline 0.1s; }
+        .helper-edit-mode .helper-inject-target:hover { outline: 1px dashed var(--accent-color); cursor: text; }
+        .helper-edit-mode .editable-active { outline: 1px solid var(--selection-color); background: rgba(0, 210, 190, 0.1); }
+        
+        /* DEBUG CONSOLE */
+        #debug-panel { position: fixed; bottom: 0; left: 0; right: 0; height: 200px; background: #111; border-top: 1px solid var(--accent-color); z-index: 9999; display: flex; flex-direction: column; font-family: monospace; transition: transform 0.2s; transform: translateY(100%); }
+        #debug-panel.open { transform: translateY(0); }
+        #debug-logs { flex: 1; overflow-y: auto; padding: 8px; font-size: 11px; }
+        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #222; padding-bottom: 2px; display: flex; gap: 10px; }
+        .log-timestamp { color: #666; }
+        .log-tag { font-weight: bold; width: 60px; }
+        .log-msg { color: #ddd; }
+        
+        /* MODALS */
+        #cmd-overlay, #keymap-overlay, #help-overlay, #generic-modal { backdrop-filter: blur(4px); transition: all 0.1s; }
+        .cmd-suggestion { padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; font-family: monospace; font-size: 12px; border-bottom: 1px solid #333; }
+        .cmd-suggestion:hover { background-color: var(--accent-color); color: #000; }
+        
+        /* Inputs */
+        .iso-input { background: #111; border: 1px solid #444; color: white; padding: 2px 4px; font-size: 10px; border-radius: 2px; width: 100%; }
+        .iso-input:focus { border-color: var(--accent-color); outline: none; }
+    </style>
+</head>
+<body class="flex h-screen w-screen font-sans text-xs" oncontextmenu="return false;">
+
+    <!-- LEFT SIDEBAR -->
+    <div id="sidebar" class="w-64 bg-panel flex flex-col border-r border-main z-20 flex-shrink-0 transition-all duration-200">
+        <div class="h-10 flex items-center justify-between px-3 bg-panel border-b border-main">
+            <span class="font-bold tracking-wide" data-editable data-key="browserTitle">BROWSER</span>
+            <span class="text-[10px] opacity-50" data-editable data-key="versionText">LIB v5.5</span>
+        </div>
+        <div class="p-2 border-b border-main">
+            <input type="text" id="search" placeholder="Filter devices..." class="w-full bg-[#111] text-xs p-1.5 rounded text-white focus:outline-none border border-transparent focus:border-white">
+        </div>
+        <div class="p-2 bg-[#222] border-b border-main flex gap-2">
+            <button onclick="App.setMode('run')" id="btn-run" class="flex-1 bg-white text-black font-bold py-1 rounded text-[10px]">RUN</button>
+            <button onclick="App.setMode('edit')" id="btn-edit" class="flex-1 bg-[#333] hover:bg-[#444] text-white py-1 rounded text-[10px]">EDIT / BUILD</button>
+        </div>
+        <div id="device-list" class="flex-1 overflow-y-auto pb-4"></div>
+        <!-- BUILDER CONTROLS -->
+        <div id="builder-controls" class="hidden p-3 border-t border-main bg-[#222]">
+            <div class="text-[10px] font-bold text-accent mb-2 uppercase">Meta Builder</div>
+            <button onclick="Builder.addNewDevice()" class="w-full bg-[#444] hover:bg-[#555] text-white py-1.5 rounded mb-2 text-[10px] border border-[#555]">+ Create New Device</button>
+            <button onclick="Builder.editMenus()" class="w-full bg-[#444] hover:bg-[#555] text-white py-1.5 rounded mb-2 text-[10px] border border-[#555]">Right-Click Menu Editor</button>
+            <button onclick="Builder.editKeymap()" class="w-full bg-[#444] hover:bg-[#555] text-white py-1.5 rounded mb-2 text-[10px] border border-[#555]">Keymap Editor</button>
+        </div>
+    </div>
+
+    <!-- MAIN VIEW -->
+    <div class="flex-1 flex flex-col relative min-w-0 z-0" style="background-color: var(--bg-color)">
+        <div class="h-10 bg-panel border-b border-main flex items-center justify-between px-3 z-10">
+            <div class="flex items-center gap-3">
+                <button onclick="App.toggleSidebar()" class="hover:text-white">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                <div class="h-4 w-[1px] bg-[#444]"></div>
+                <span class="font-bold" data-editable data-key="projectTitle" id="project-name">Untitled Project</span>
+            </div>
+            <div class="flex gap-2 items-center">
+                 <button onclick="Actions.show_help()" class="bg-[#333] hover:bg-[#444] border border-main w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-bold text-accent">?</button>
+                 <button onclick="Actions.cmd_add()" class="bg-[#333] hover:bg-[#444] border border-main px-3 py-1 rounded text-[10px] text-accent font-bold">CMD</button>
+                 <button onclick="DebugSys.toggle()" class="bg-[#333] hover:bg-[#444] border border-main px-3 py-1 rounded text-[10px] text-red-400 font-bold">DEBUG</button>
+                 <button onclick="Exporter.saveToHTML()" class="bg-[#00d2be] hover:bg-white text-black font-bold border border-main px-3 py-1 rounded text-[10px]">Save</button>
+                 <button onclick="App.clear()" class="bg-[#333] hover:bg-[#822] border border-main px-3 py-1 rounded text-[10px]">Clear</button>
+            </div>
+        </div>
+        <div id="canvas-container" class="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing">
+            <canvas id="mapper-canvas"></canvas>
+            <div class="absolute bottom-2 left-2 text-[10px] opacity-50 pointer-events-none">
+                Mode: <span id="mode-display">RUN</span> • Undo: Ctrl+Z
+            </div>
+        </div>
+    </div>
+
+    <!-- INSPECTOR -->
+    <div class="w-72 bg-panel border-l border-main flex-col z-20 flex-shrink-0 hidden lg:flex">
+        <div class="h-10 flex items-center px-3 font-bold bg-panel border-b border-main">
+            <span data-editable data-key="inspectorTitle">INSPECTOR</span>
+        </div>
+        <div id="inspector-content" class="p-4 space-y-4 overflow-y-auto flex-1"></div>
+    </div>
+
+    <!-- OVERLAYS -->
+    <div id="context-menu" class="hidden"></div>
+    <div id="cmd-overlay" class="fixed inset-0 z-50 bg-black/70 hidden flex items-start justify-center pt-24" onclick="if(event.target===this) Actions.cmd_add()"><div class="w-[600px] bg-panel border border-[#444] shadow-2xl rounded-md overflow-hidden flex flex-col"><div class="p-3 border-b border-[#444] flex gap-2 items-center bg-[#222]"><span class="text-accent font-mono text-lg">></span><input type="text" id="cmd-input" class="bg-transparent border-none outline-none text-white w-full font-mono text-sm" placeholder="Type command..." autocomplete="off"></div><div id="cmd-suggestions" class="max-h-64 overflow-y-auto bg-[#1a1a1a]"></div></div></div>
+    
+    <!-- GENERIC IN-APP MODAL -->
+    <div id="generic-modal" class="fixed inset-0 z-50 bg-black/80 hidden flex items-center justify-center">
+        <div class="w-[500px] bg-panel border border-[#444] shadow-2xl rounded-md p-4 flex flex-col max-h-[80vh]">
+            <div class="font-bold text-lg mb-4 text-white" id="g-modal-title">Title</div>
+            <div id="g-modal-body" class="mb-4 text-[#ccc] text-sm"></div>
+            <input type="text" id="g-modal-input" class="w-full bg-[#111] border border-[#444] p-2 text-white rounded mb-4 focus:border-accent outline-none hidden">
+            <textarea id="g-modal-textarea" class="w-full bg-[#111] border border-[#444] p-2 text-white rounded mb-4 focus:border-accent outline-none font-mono text-xs h-40 hidden"></textarea>
+            
+            <div class="flex justify-end gap-2 mt-auto">
+                <button id="g-modal-cancel" class="bg-[#333] hover:bg-[#444] text-white px-3 py-1 rounded text-xs">Cancel</button>
+                <button id="g-modal-confirm" class="bg-accent text-black font-bold px-3 py-1 rounded text-xs">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HELP OVERLAY -->
+    <div id="help-overlay" class="fixed inset-0 z-50 bg-black/80 hidden flex items-center justify-center" onclick="if(event.target===this) document.getElementById('help-overlay').classList.add('hidden')">
+        <div class="w-[600px] bg-panel border border-[#444] shadow-2xl rounded-md overflow-hidden flex flex-col max-h-[80vh]">
+            <div class="p-4 bg-[#222] border-b border-[#444] font-bold text-lg text-white">System Documentation</div>
+            <div class="p-6 overflow-y-auto text-sm text-[#ccc] space-y-4" id="help-content"></div>
+        </div>
+    </div>
+
+    <!-- DEBUG PANEL -->
+    <div id="debug-panel">
+        <div class="bg-[#222] border-b border-[#444] px-2 py-1 flex justify-between items-center">
+            <div class="flex gap-4 items-center"><span class="font-bold text-accent">SYSTEM MONITOR</span><span id="debug-health" class="text-[10px] text-gray-500">Idle</span></div>
+            <div class="flex gap-2"><button onclick="DebugSys.runDiagnostics()" class="bg-accent text-black font-bold px-2 rounded text-[10px]">Run Diagnostics</button><button onclick="DebugSys.clear()" class="bg-[#333] px-2 rounded text-[10px]">Clear</button><button onclick="DebugSys.toggle()" class="text-white">✕</button></div>
+        </div>
+        <div id="debug-logs"></div>
+    </div>
+
+    <!-- KEYMAP EDITOR -->
+    <div id="keymap-overlay" class="fixed inset-0 z-50 bg-black/80 hidden flex items-center justify-center" onclick="if(event.target===this) document.getElementById('keymap-overlay').classList.add('hidden')">
+        <div class="w-[500px] bg-panel border border-[#444] shadow-2xl rounded-md overflow-hidden flex flex-col max-h-[80vh]">
+            <div class="p-3 bg-[#222] border-b border-[#444] font-bold text-accent">Keymap Editor</div>
+            <div class="p-3 overflow-y-auto flex-1 space-y-2" id="keymap-list"></div>
+            <div class="p-3 bg-[#222] border-t border-[#444]"><div class="text-[10px] text-muted mb-2 uppercase font-bold">Add Binding</div><div class="flex gap-2 mb-2"><input type="text" id="new-key" placeholder="Key" class="w-16 bg-[#111] border border-[#444] p-1 text-center text-white rounded"><label class="flex items-center gap-1 text-xs"><input type="checkbox" id="new-ctrl"> Ctrl</label><label class="flex items-center gap-1 text-xs"><input type="checkbox" id="new-shift"> Shift</label></div><div class="flex gap-2"><select id="new-action" class="flex-1 bg-[#111] border border-[#444] p-1 text-white rounded text-xs"></select><button onclick="Builder.addKeybinding()" class="bg-accent text-black px-3 py-1 rounded text-xs font-bold">Add</button></div></div>
+        </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- MODULE: DATABASE                                                  -->
+    <!-- ================================================================= -->
+    <script id="db-script">
+        var DB = {
+            library: [
+                { id: "rack", name: "Audio Effect Rack", category: "Utilities", headerColor: "#505050", width: 180, height: 240, params: ["Macro 1", "Macro 2", "Macro 3", "Macro 4", "Macro 5", "Macro 6", "Macro 7", "Macro 8"], mapBtn: true },
+                { id: "lfo", name: "LFO", category: "Modulators", headerColor: "#FF764D", width: 160, params: [{name:"Rate", unit:"Hz", min:0.01, max:40}, {name:"Depth", unit:"%", min:0, max:100}, "Jitter", "Smooth", "Offset", "Phase"], mapBtn: true },
+                { id: "analog", name: "Analog", category: "Instruments", headerColor: "#D5D6D5", width: 220, params: ["Osc 1", "Osc 2", {name:"Filter", unit:"Hz", min:20, max:20000}, "Resonance", "Amp Env", "LFO"] },
+                { id: "wavetable", name: "Wavetable", category: "Instruments", headerColor: "#D5D6D5", width: 240, params: ["Osc 1 Pos", "Osc 2 Pos", "Filter", "Resonance", "Unison", "Sub"] },
+                { id: "autofilter", name: "Auto Filter", category: "Audio Effects", headerColor: "#24B6E6", width: 200, params: [{name:"Frequency", unit:"Hz", min:20, max:20000}, {name:"Resonance", unit:"%", min:0, max:120}, "LFO Amount", "Envelope", "Quantize"] },
+                { id: "compressor", name: "Compressor", category: "Audio Effects", headerColor: "#24B6E6", width: 200, params: [{name:"Threshold", unit:"dB", min:-60, max:0}, {name:"Ratio", unit:":1", min:1, max:20}, "Attack", "Release", "Knee", "Sidechain"] }
+            ],
+            menus: {
+                canvas: [{ label: "New Device", action: "cmd_add" }, { label: "Reset View", action: "view_reset" }, { divider: true }, { label: "Clear All", action: "file_clear" }],
+                node: [{ label: "Rename", action: "node_rename" }, { label: "Unplug Cables", action: "node_disconnect" }, { divider: true }, { label: "Group (Ctrl+G)", action: "node_group" }, { label: "Duplicate", action: "node_duplicate" }, { label: "Delete", action: "node_delete" }]
+            },
+            keybindings: [
+                { key: "k", ctrl: true, action: "cmd_add", desc: "Open Command Palette" },
+                { key: "g", ctrl: true, action: "node_group", desc: "Group Selected into Rack" },
+                { key: "Delete", action: "node_delete", desc: "Delete Selected" },
+                { key: "Backspace", action: "node_delete", desc: "Delete Selected" },
+                { key: "d", ctrl: true, action: "node_duplicate", desc: "Duplicate Selected" },
+                { key: "z", ctrl: true, action: "history_undo", desc: "Undo" },
+                { key: "y", ctrl: true, action: "history_redo", desc: "Redo" }
+            ],
+            theme: { bg: '#1e1e1e', panel: '#282828', header: '#4a4a4a', text: '#dcdcdc', accent: '#ff764d', selection: '#00d2be', border: '#111111' },
+            uiText: { browserTitle: "BROWSER", versionText: "LIB v5.2", projectTitle: "Untitled Project", inspectorTitle: "INSPECTOR" }
+        };
+        var PROJECT_STATE = { nodes: [], edges: [], lastX: 100 };
+    </script>
+
+    <!-- ================================================================= -->
+    <!-- MODULE: MODAL SYSTEM (New)                                        -->
+    <!-- ================================================================= -->
+    <script>
+        const Modal = {
+            el: null,
+            init() {
+                this.el = document.getElementById('generic-modal');
+                this.title = document.getElementById('g-modal-title');
+                this.body = document.getElementById('g-modal-body');
+                this.input = document.getElementById('g-modal-input');
+                this.textarea = document.getElementById('g-modal-textarea');
+                this.btnConfirm = document.getElementById('g-modal-confirm');
+                this.btnCancel = document.getElementById('g-modal-cancel');
+                this.btnCancel.onclick = () => this.close();
+            },
+            close() { this.el.classList.add('hidden'); },
+            reset() {
+                this.body.innerText = '';
+                this.input.classList.add('hidden');
+                this.textarea.classList.add('hidden');
+                const newBtn = this.btnConfirm.cloneNode(true);
+                this.btnConfirm.replaceWith(newBtn);
+                this.btnConfirm = newBtn;
+            },
+            // 1. Prompt (Text Input)
+            prompt(title, value, onConfirm) {
+                this.reset();
+                this.title.innerText = title;
+                this.input.value = value || '';
+                this.input.classList.remove('hidden');
+                this.el.classList.remove('hidden');
+                this.input.focus();
+                this.btnConfirm.onclick = () => { this.close(); if(onConfirm) onConfirm(this.input.value); };
+                this.input.onkeydown = (e) => { if(e.key === 'Enter') this.btnConfirm.click(); };
+            },
+            // 2. Confirm (Yes/No)
+            confirm(title, message, onConfirm) {
+                this.reset();
+                this.title.innerText = title;
+                this.body.innerText = message;
+                this.el.classList.remove('hidden');
+                this.btnConfirm.onclick = () => { this.close(); if(onConfirm) onConfirm(); };
+            },
+            // 3. Editor (JSON)
+            editor(title, value, onConfirm) {
+                this.reset();
+                this.title.innerText = title;
+                this.textarea.value = value || '';
+                this.textarea.classList.remove('hidden');
+                this.el.classList.remove('hidden');
+                this.btnConfirm.onclick = () => { this.close(); if(onConfirm) onConfirm(this.textarea.value); };
+            }
+        };
+    </script>
+
+    <!-- ================================================================= -->
+    <!-- MODULE: HISTORY ENGINE                                            -->
+    <!-- ================================================================= -->
+    <script>
+        const History = {
+            stack: [], pointer: -1, limit: 50,
+            snapshot() {
+                if (this.pointer < this.stack.length - 1) this.stack = this.stack.slice(0, this.pointer + 1);
+                this.stack.push(JSON.parse(JSON.stringify({ nodes: App.graph.nodes, edges: App.graph.edges })));
+                if (this.stack.length > this.limit) this.stack.shift(); else this.pointer++;
+                App.autoSave(false);
+            },
+            undo() { if (this.pointer > 0) { this.pointer--; this.restore(); } },
+            redo() { if (this.pointer < this.stack.length - 1) { this.pointer++; this.restore(); } },
+            restore() {
+                const state = this.stack[this.pointer];
+                if(state) { App.graph.nodes = JSON.parse(JSON.stringify(state.nodes)); App.graph.edges = JSON.parse(JSON.stringify(state.edges)); App.select(null); }
+            }
+        };
+    </script>
+
+    <!-- ================================================================= -->
+    <!-- MODULE: DEBUG SYSTEM                                              -->
+    <!-- ================================================================= -->
+    <script>
+        const DebugSys = {
+            el: null, init() {
+                this.el = document.getElementById('debug-panel');
+                this.logContainer = document.getElementById('debug-logs');
+                const _log = console.log, _error = console.error;
+                console.log = (...args) => { _log(...args); this.addEntry('INFO', args); };
+                console.error = (...args) => { _error(...args); this.addEntry('ERROR', args); };
+            },
+            toggle() { this.el.classList.toggle('open'); },
+            clear() { this.logContainer.innerHTML = ''; },
+            addEntry(type, args) {
+                if(!this.logContainer) return;
+                const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+                const div = document.createElement('div');
+                div.className = 'log-entry';
+                div.innerHTML = `<span class="log-timestamp">[${new Date().toLocaleTimeString().split(' ')[0]}]</span><span class="log-tag" style="color:${type==='ERROR'?'var(--error-color)':'#aaa'}">${type}</span><span class="log-msg">${msg}</span>`;
+                this.logContainer.prepend(div);
+            },
+            runDiagnostics() {
+                this.clear(); let errors = 0;
+                ['App','GraphEngine','HelperEngine','DB','Actions','Builder','History'].forEach(mod => { if(typeof window[mod] === 'undefined') { this.addEntry('ERROR', [`Module '${mod}' missing.`]); errors++; } });
+                [...DB.menus.canvas, ...DB.menus.node].forEach(m => { if(m.action && !Actions[m.action]) { this.addEntry('ERROR', [`Menu broken: ${m.label}`]); errors++; } });
+                DB.keybindings.forEach(k => { if(!Actions[k.action]) { this.addEntry('ERROR', [`Key broken: ${k.key}`]); errors++; } });
+                if(errors === 0) { this.addEntry('SUCCESS', ['System Healthy.']); document.getElementById('debug-health').innerText = "Healthy"; document.getElementById('debug-health').style.color = "var(--success-color)"; } 
+                else { document.getElementById('debug-health').innerText = `${errors} Issues`; document.getElementById('debug-health').style.color = "var(--error-color)"; }
+            }
+        };
+    </script>
+
+    <!-- ================================================================= -->
+    <!-- MODULE: ACTION REGISTRY                                           -->
+    <!-- ================================================================= -->
+    <script>
+        const Actions = {
+            cmd_add: () => App.CLI.toggle(),
+            view_reset: () => App.graph.resetCamera(),
+            file_clear: () => App.clear(),
+            history_undo: () => History.undo(),
+            history_redo: () => History.redo(),
+            show_help: () => {
+                const el = document.getElementById('help-overlay');
+                const content = document.getElementById('help-content');
+                let html = `<b>Keybindings:</b><ul class="list-disc pl-4 mb-4">`;
+                DB.keybindings.forEach(k => html += `<li><span class="font-mono text-accent">${k.ctrl?'Ctrl+':''}${k.key.toUpperCase()}</span> : ${k.desc || k.action}</li>`);
+                html += `</ul><b>Tips:</b><ul class="list-disc pl-4"><li><b>Edit Mode:</b> Resize panels via Inspector. Click Gear icon to edit parameters.</li><li><b>Wire:</b> Click wire then DEL to remove.</li></ul>`;
+                content.innerHTML = html;
+                el.classList.remove('hidden');
+            },
+            node_rename: (ctx) => {
+                const node = ctx?.node || App.selectedNode;
+                if(!node) return;
+                Modal.prompt("Rename Instance", node.label, (name) => {
+                    if(name) { node.label = name; History.snapshot(); App.select(node); }
+                });
+            },
+            node_disconnect: (ctx) => {
+                const node = ctx?.node || App.selectedNode;
+                if(!node) return;
+                App.graph.edges = App.graph.edges.filter(e => e.fromNode !== node.id && e.toNode !== node.id);
+                node.params.forEach(p => p.mappedBy = null);
+                History.snapshot();
+            },
+            node_group: (ctx) => {
+                const node = ctx?.node || App.selectedNode;
+                if(!node) return Modal.confirm("Error", "Select a device to group.");
+                const rackBP = DB.library.find(b => b.id === 'rack');
+                const rack = App.graph.addNode(rackBP, node.x - 200, node.y);
+                node.params.slice(0,8).forEach((p, i) => { const macro = rack.params[i]; if(macro) App.graph.connect(macro.id, rack.id, node.id, p.id); });
+                console.log("Grouped into Rack with auto-wiring.");
+            },
+            node_duplicate: (ctx) => {
+                const node = ctx?.node || App.selectedNode;
+                if(!node) return;
+                const bp = DB.library.find(b => b.id === node.bpId);
+                if(bp) { const newNode = App.graph.addNode(bp, node.x + 20, node.y + 20); App.select(newNode); }
+            },
+            node_delete: (ctx) => {
+                if(App.selectedEdge) { App.graph.removeEdge(App.selectedEdge); App.selectedEdge = null; History.snapshot(); return; }
+                const node = ctx?.node || App.selectedNode;
+                if(node) { App.graph.removeNode(node.id); App.select(null); History.snapshot(); }
+            }
+        };
+    </script>
+
+    <!-- ================================================================= -->
+    <!-- MODULE: HELPER ENGINE                                             -->
+    <!-- ================================================================= -->
+    <script id="module-helper">
+        (function(global){
+            const Engine = {
+                VERSION: "1.0.3", mounted: false, opts: { canvasId: null, scanSelectors: ['[data-editable]'], autoScanOnInit: false }, state: { domIndex: {}, ui: { mode: 'run' } },
+                async init(options = {}) { if(this.mounted) return this; Object.assign(this.opts, options); if(this.opts.autoScanOnInit) this.scanDOM(); this._injectHelpersUI(); this.mounted = true; return this; },
+                scanDOM() {
+                    const nodes = {};
+                    this.opts.scanSelectors.forEach(sel => { Array.from(document.querySelectorAll(sel)).forEach(el => { const id = el.getAttribute('data-helper-id') || ('h_' + Math.random().toString(36).slice(2,10)); el.setAttribute('data-helper-id', id); nodes[id] = { id, el, key: el.dataset.key || null, editable: el.hasAttribute('data-editable') }; this._attachOverlay(nodes[id]); }); });
+                    this.state.domIndex = nodes;
+                },
+                _attachOverlay(info){
+                    if(info.__injected) return; info.__injected = true; info.el.classList.add('helper-inject-target');
+                    if(info.key && window.DB && window.DB.uiText && window.DB.uiText[info.key]) { info.el.innerText = window.DB.uiText[info.key]; }
+                    info.el.addEventListener('input', () => { if(info.key && window.DB && window.DB.uiText) { window.DB.uiText[info.key] = info.el.innerText; if(window.App) window.App.autoSave(); } });
+                },
+                setMode(mode = 'run'){
+                    this.state.ui.mode = mode; document.body.classList.toggle('helper-edit-mode', mode === 'edit');
+                    Object.values(this.state.domIndex).forEach(info => { if(info.editable){ info.el.contentEditable = (mode === 'edit'); info.el.classList.toggle('editable-active', mode === 'edit'); } });
+                },
+                exportMenu(){
+                    const choice = prompt("Export options:\n1 = Single HTML (Recommended)\n2 = ZIP Package\n3 = Electron (JSON)\n\nChoose 1, 2, or 3:", "1");
+                    if(choice === '1') Exporter.saveToHTML();
+                    else if(choice === '2') this.exportAsZip(`${document.title}_pkg`);
+                    else if(choice === '3') this.exportForElectron(`${document.title}_folder`);
+                },
+                buildProjectJSON() { return { db: window.DB || {}, state: window.App ? window.App.graph.nodes : [], meta: { created: new Date().toISOString() } }; },
+                async exportAsZip(folderName='project') { const zip = new JSZip(); const project = this.buildProjectJSON(); zip.file(`${folderName}/db.json`, JSON.stringify(project.db, null, 2)); zip.file(`${folderName}/state.json`, JSON.stringify(project.state, null, 2)); const content = await zip.generateAsync({type:"blob"}); saveAs(content, `${folderName}.zip`); },
+                async exportForElectron(folderName){ const project = this.buildProjectJSON(); const files = { 'db.json': JSON.stringify(project.db, null, 2), 'state.json': JSON.stringify(project.state, null, 2) }; if(window.electronAPI && window.electronAPI.saveFiles){ await window.electronAPI.saveFiles({folderName, files}); alert("Saved via IPC"); } else { alert("No Electron API."); } },
+                _injectHelpersUI(){ const css = document.createElement('style'); css.textContent = `.helper-inject-target { transition: all 0.2s; border: 1px solid transparent; border-radius: 4px; } .helper-edit-mode .helper-inject-target:hover { border-color: var(--accent-color); cursor: text; background: rgba(255,255,255,0.05); } .helper-edit-mode .editable-active { border-color: var(--selection-color); }`; document.head.appendChild(css); }
+            };
+            global.HelperEngine = Engine;
+        })(window);
+    </script>
+
+    <!-- ================================================================= -->
+    <!-- MODULE: APP LOGIC                                                 -->
+    <!-- ================================================================= -->
+    <script>
+        const Theme = {
+            apply() {
+                const root = document.documentElement;
+                root.style.setProperty('--bg-color', DB.theme.bg); root.style.setProperty('--panel-color', DB.theme.panel); root.style.setProperty('--header-color', DB.theme.header);
+                root.style.setProperty('--text-color', DB.theme.text); root.style.setProperty('--accent-color', DB.theme.accent); root.style.setProperty('--selection-color', DB.theme.selection);
+                root.style.setProperty('--border-color', DB.theme.border);
+            },
+            update(key, val) { DB.theme[key] = val; this.apply(); App.autoSave(); }
+        };
+
+        class GraphEngine {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId); this.ctx = this.canvas.getContext('2d');
+                this.nodes = []; this.edges = []; this.scale = 1; this.offsetX = 0; this.offsetY = 0;
+                this.initEvents(); this.loop = this.loop.bind(this); requestAnimationFrame(this.loop);
+            }
+            loadState(state) { if(!state || !state.nodes) return; this.nodes = state.nodes; this.edges = state.edges || []; if(state.lastX) App.lastX = state.lastX; History.snapshot(); }
+            addNode(blueprint, x, y) {
+                const id = Math.random().toString(36).substr(2, 9);
+                const width = blueprint.width || 160; 
+                const headerH = 24; const rowH = 20;
+                const height = blueprint.height || (headerH + (blueprint.params.length * rowH) + 10);
+                const node = {
+                    id: id, bpId: blueprint.id, label: blueprint.name, headerColor: blueprint.headerColor,
+                    x: x, y: y, w: width, h: height,
+                    params: blueprint.params.map((p, i) => {
+                        const def = (typeof p === 'object') ? p : { name: p };
+                        return { id: `${id}_p_${i}`, label: def.name, relY: headerH + (i * rowH) + 10, val: 0.5, mappedBy: null, unit: def.unit || '', min: def.min !== undefined ? def.min : 0, max: def.max !== undefined ? def.max : 1 };
+                    })
+                };
+                this.nodes.push(node); History.snapshot(); return node;
+            }
+            removeNode(id) { this.nodes = this.nodes.filter(n => n.id !== id); this.edges = this.edges.filter(e => e.fromNode !== id && e.toNode !== id); History.snapshot(); }
+            removeEdge(edge) { this.edges = this.edges.filter(e => e !== edge); this.nodes.forEach(n => n.params.forEach(p => { if(p.mappedBy === edge.fromNode) p.mappedBy = null; })); History.snapshot(); }
+            connect(fromNodeId, fromParamId, toNodeId, toParamId, type = 'signal') {
+                if(this.edges.some(e => e.toParam === toParamId)) return;
+                this.edges.push({ fromNode: fromNodeId, fromParam: fromParamId, toNode: toNodeId, toParam: toParamId, type: type });
+                const targetNode = this.nodes.find(n => n.id === toNodeId);
+                if(targetNode) { const targetParam = targetNode.params.find(p => p.id === toParamId); if(targetParam) targetParam.mappedBy = fromNodeId; }
+                History.snapshot();
+            }
+            loop() {
+                const ctx = this.ctx; const dpr = window.devicePixelRatio || 1; const rect = this.canvas.parentElement.getBoundingClientRect();
+                if (this.canvas.width !== rect.width * dpr || this.canvas.height !== rect.height * dpr) { this.canvas.width = rect.width * dpr; this.canvas.height = rect.height * dpr; this.canvas.style.width = `${rect.width}px`; this.canvas.style.height = `${rect.height}px`; ctx.scale(dpr, dpr); }
+                ctx.fillStyle = DB.theme.bg; ctx.fillRect(0, 0, rect.width, rect.height);
+                ctx.save(); ctx.translate(this.offsetX, this.offsetY); ctx.scale(this.scale, this.scale);
+                const size = 5000; const step = 100; ctx.strokeStyle = '#252525'; ctx.lineWidth = 1; ctx.beginPath();
+                for(let x=-size; x<size; x+=step) { ctx.moveTo(x, -size); ctx.lineTo(x, size); } for(let y=-size; y<size; y+=step) { ctx.moveTo(-size, y); ctx.lineTo(size, y); } ctx.stroke();
+                this.edges.forEach(e => this.drawEdge(ctx, e));
+                if(this.tempWire) this.drawTempWire(ctx);
+                this.nodes.forEach(n => this.drawNode(ctx, n));
+                ctx.restore(); requestAnimationFrame(this.loop);
+            }
+            drawNode(ctx, n) {
+                const isSelected = App.selectedNode === n;
+                ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.roundRect(n.x+4, n.y+4, n.w, n.h, 6); ctx.fill();
+                ctx.fillStyle = DB.theme.device; ctx.strokeStyle = isSelected ? '#fff' : '#000'; ctx.lineWidth = isSelected ? 2 : 1;
+                ctx.beginPath(); ctx.roundRect(n.x, n.y, n.w, n.h, 6); ctx.fill(); ctx.stroke();
+                ctx.fillStyle = n.headerColor; ctx.beginPath(); ctx.roundRect(n.x, n.y, n.w, 24, [6,6,0,0]); ctx.fill();
+                ctx.fillStyle = '#000'; ctx.font = 'bold 11px sans-serif'; 
+                const labelW = ctx.measureText(n.label).width;
+                if(labelW > n.w - 20) ctx.fillText(n.label.substring(0, 15) + '...', n.x+8, n.y+16);
+                else ctx.fillText(n.label, n.x+8, n.y+16);
+                ctx.font = '10px sans-serif';
+                n.params.forEach(p => {
+                    const py = n.y + p.relY; const isMapped = p.mappedBy !== null;
+                    ctx.fillStyle = isMapped ? DB.theme.accent : '#555'; ctx.beginPath(); ctx.arc(n.x, py, 4, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#555'; ctx.beginPath(); ctx.arc(n.x + n.w, py, 4, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = isMapped ? DB.theme.accent : DB.theme.text; 
+                    const pW = ctx.measureText(p.label).width; const maxPW = n.w - 70; 
+                    if(pW > maxPW) ctx.fillText(p.label.substring(0, 15)+'...', n.x+10, py+3);
+                    else ctx.fillText(p.label, n.x+10, py+3);
+                    ctx.fillStyle = '#222'; ctx.fillRect(n.x + n.w - 60, py - 4, 50, 6);
+                    ctx.fillStyle = isMapped ? DB.theme.accent : DB.theme.text; ctx.fillRect(n.x + n.w - 60, py - 4, 50 * p.val, 6);
+                    if (p.min !== undefined) {
+                        const realVal = p.min + (p.max - p.min) * p.val;
+                        const display = p.unit ? `${Math.round(realVal)}${p.unit}` : realVal.toFixed(2);
+                        ctx.fillStyle = '#888'; ctx.fillText(display, n.x + n.w - 85, py + 3);
+                    }
+                });
+            }
+            drawEdge(ctx, e) {
+                const n1 = this.nodes.find(n => n.id === e.fromNode); const n2 = this.nodes.find(n => n.id === e.toNode); if(!n1 || !n2) return;
+                let p1, p2;
+                if(e.fromParam === 'header') { p1 = { x: n1.x + n1.w, y: n1.y + 12 }; } else { const p = n1.params.find(x => x.id === e.fromParam); if(p) p1 = { x: n1.x + n1.w, y: n1.y + p.relY }; }
+                const p = n2.params.find(x => x.id === e.toParam); if(p) p2 = { x: n2.x, y: n2.y + p.relY };
+                if(p1 && p2) {
+                    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.bezierCurveTo(p1.x + 50, p1.y, p2.x - 50, p2.y, p2.x, p2.y);
+                    const isSelected = App.selectedEdge === e; ctx.strokeStyle = isSelected ? '#fff' : (e.type === 'mod' ? DB.theme.accent : '#777'); ctx.lineWidth = isSelected ? 3 : 2;
+                    if(e.type === 'mod') ctx.setLineDash([4,4]); else ctx.setLineDash([]); ctx.stroke(); ctx.setLineDash([]);
+                    if (ctx.isPointInStroke && App.checkHit) { if (ctx.isPointInStroke(App.checkHit.x, App.checkHit.y)) App.checkHit.result = e; }
+                }
+            }
+            drawTempWire(ctx) { ctx.beginPath(); ctx.moveTo(this.tempWire.x, this.tempWire.y); ctx.lineTo(this.currentMx, this.currentMy); ctx.strokeStyle = '#fff'; ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]); }
+            initEvents() {
+                const cvs = this.canvas;
+                cvs.addEventListener('mousedown', e => this.onStart(e)); window.addEventListener('mousemove', e => this.onMove(e)); window.addEventListener('mouseup', e => this.onEnd(e));
+                cvs.addEventListener('wheel', e => { e.preventDefault(); this.scale = Math.min(Math.max(0.2, this.scale - e.deltaY * 0.001), 4); });
+                cvs.addEventListener('contextmenu', e => this.onCtx(e));
+                window.addEventListener('keydown', e => {
+                    if(!DB.keybindings) return;
+                    const binding = DB.keybindings.find(b => {
+                        const keyMatch = b.key.toLowerCase() === e.key.toLowerCase();
+                        const ctrlMatch = !!b.ctrl === (e.ctrlKey || e.metaKey);
+                        return keyMatch && ctrlMatch;
+                    });
+                    if(binding && Actions[binding.action]) { e.preventDefault(); Actions[binding.action](); }
+                });
+            }
+            hitTest(x, y) {
+                const wx = (x - this.offsetX) / this.scale; const wy = (y - this.offsetY) / this.scale;
+                for (let i = this.nodes.length - 1; i >= 0; i--) {
+                    const n = this.nodes[i];
+                    if (wx >= n.x && wx <= n.x + n.w && wy >= n.y && wy <= n.y + 24) return { type: 'header', node: n };
+                    if (wx >= n.x - 10 && wx <= n.x + n.w + 10 && wy >= n.y && wy <= n.y + n.h) {
+                        for(let p of n.params) {
+                            const py = n.y + p.relY;
+                            if (Math.abs(wx - (n.x + n.w)) < 15 && Math.abs(wy - py) < 10) return { type: 'out', node: n, param: p };
+                            if (Math.abs(wx - n.x) < 15 && Math.abs(wy - py) < 10) return { type: 'in', node: n, param: p };
+                        }
+                    }
+                }
+                for (let e of this.edges) {
+                    const n1 = this.nodes.find(n => n.id === e.fromNode); const n2 = this.nodes.find(n => n.id === e.toNode);
+                    if(n1 && n2) {
+                        const mx = (n1.x + n2.x)/2 + 25; const my = (n1.y + n2.y)/2; 
+                        if (Math.abs(wx - mx) < 40 && Math.abs(wy - my) < 40) return { type: 'edge', edge: e };
+                    }
+                }
+                return null;
+            }
+            onStart(e) {
+                if(e.button === 2) return; 
+                const rect = this.canvas.getBoundingClientRect(); const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
+                const hit = this.hitTest(mx, my);
+                document.getElementById('context-menu').classList.add('hidden'); 
+                if(hit) {
+                    if(hit.type === 'header') { this.isDragging = true; this.dragNode = hit.node; this.dragStart = { x: mx, y: my, nodeX: hit.node.x, nodeY: hit.node.y }; App.select(hit.node); }
+                    else if (hit.type === 'out') { this.isWiring = true; this.wireStart = { node: hit.node, param: hit.param }; this.tempWire = { x: hit.node.x + hit.node.w, y: hit.node.y + hit.param.relY }; }
+                    else if (hit.type === 'edge') { App.selectedEdge = hit.edge; App.select(null); }
+                } else { this.isPanning = true; this.panStart = { x: mx, y: my, ox: this.offsetX, oy: this.offsetY }; App.select(null); App.selectedEdge = null; }
+            }
+            onMove(e) {
+                const rect = this.canvas.getBoundingClientRect(); const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
+                this.currentMx = (mx - this.offsetX) / this.scale; this.currentMy = (my - this.offsetY) / this.scale;
+                if(this.isDragging) { const dx = (mx - this.dragStart.x) / this.scale; const dy = (my - this.dragStart.y) / this.scale; this.dragNode.x = this.dragStart.nodeX + dx; this.dragNode.y = this.dragStart.nodeY + dy; }
+                if(this.isPanning) { this.offsetX = this.panStart.ox + (mx - this.panStart.x); this.offsetY = this.panStart.oy + (my - this.panStart.y); }
+            }
+            onEnd(e) {
+                if(this.isDragging) History.snapshot();
+                if(this.isWiring) {
+                    const rect = this.canvas.getBoundingClientRect(); const hit = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
+                    if(hit && hit.type === 'in' && hit.node.id !== this.wireStart.node.id) {
+                        const srcDef = DB.library.find(d => d.id === this.wireStart.node.bpId);
+                        const type = (srcDef && srcDef.category === 'Modulators') ? 'mod' : 'signal';
+                        this.connect(this.wireStart.node.id, this.wireStart.param.id, hit.node.id, hit.param.id, type);
+                    }
+                }
+                this.isDragging = false; this.isPanning = false; this.isWiring = false; this.tempWire = null;
+            }
+            onCtx(e) {
+                e.preventDefault(); const rect = this.canvas.getBoundingClientRect(); const hit = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
+                const items = (hit && hit.type !== 'edge') ? DB.menus.node : DB.menus.canvas;
+                const menu = document.getElementById('context-menu'); menu.innerHTML = '';
+                items.forEach(item => {
+                    if(item.divider) { const div = document.createElement('div'); div.className='ctx-divider'; menu.appendChild(div); } 
+                    else { const el = document.createElement('div'); el.className = 'ctx-item'; el.innerHTML = `<span>${item.label}</span>`; el.onclick = () => { if(Actions[item.action]) Actions[item.action]({ node: hit ? hit.node : null }); menu.classList.add('hidden'); }; menu.appendChild(el); }
+                });
+                menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px'; menu.classList.remove('hidden');
+                if(hit && hit.node) App.select(hit.node);
+            }
+            resetCamera() { this.offsetX = 0; this.offsetY = 0; this.scale = 1; }
+        }
+
+        const Builder = {
+            addNewDevice() {
+                Modal.prompt("Enter Device Name", "", (name) => {
+                    if(!name) return;
+                    const category = "User"; // Simplify for now
+                    const newDevice = { id: "user_" + Math.random().toString(36).substr(2,5), name: name, category: category, headerColor: "#999", width: 160, params: ["Param 1", "Param 2"], mapBtn: false };
+                    DB.library.push(newDevice); 
+                    document.getElementById('search').value = ''; 
+                    App.renderBrowser(); App.selectBlueprint(newDevice); App.autoSave(); 
+                    console.log(`Created new device: ${name}`);
+                });
+            },
+            deleteBlueprint(id) { Modal.confirm("Delete Device", "Permanently remove this device from the library?", () => { DB.library = DB.library.filter(d => d.id !== id); App.renderBrowser(); App.select(null); App.autoSave(); }); },
+            editMenus() { Modal.editor("Edit Menu JSON", JSON.stringify(DB.menus, null, 2), (val) => { try { DB.menus = JSON.parse(val); App.autoSave(); alert("Menus updated."); } catch(e) { alert("Invalid JSON"); } }); },
+            editKeymap() {
+                const overlay = document.getElementById('keymap-overlay'); overlay.classList.remove('hidden');
+                const list = document.getElementById('keymap-list'); list.innerHTML = '';
+                DB.keybindings.forEach((b, idx) => {
+                    const div = document.createElement('div'); div.className = "flex justify-between items-center bg-[#111] p-2 rounded";
+                    let keys = []; if(b.ctrl) keys.push('Ctrl'); if(b.shift) keys.push('Shift'); if(b.alt) keys.push('Alt'); keys.push(b.key.toUpperCase());
+                    div.innerHTML = `<div class="font-mono text-xs text-white">${keys.join('+')}</div> <div class="text-xs text-accent">-> ${b.action}</div> <button onclick="Builder.removeKeybinding(${idx})" class="text-red-500">×</button>`; list.appendChild(div);
+                });
+                const sel = document.getElementById('new-action'); sel.innerHTML = Object.keys(Actions).map(k => `<option value="${k}">${k}</option>`).join('');
+            },
+            addKeybinding() {
+                const key = document.getElementById('new-key').value; const ctrl = document.getElementById('new-ctrl').checked; const shift = document.getElementById('new-shift').checked; const alt = document.getElementById('new-alt').checked; const action = document.getElementById('new-action').value;
+                if(key && action) { DB.keybindings.push({ key, ctrl, shift, alt, action }); App.autoSave(); this.editKeymap(); }
+            },
+            removeKeybinding(idx) { DB.keybindings.splice(idx, 1); App.autoSave(); this.editKeymap(); },
+            editParamDetails(bpId, idx) {
+                const bp = DB.library.find(b => b.id === bpId);
+                const p = bp.params[idx];
+                const currentName = (typeof p === 'object') ? p.name : p;
+                Modal.prompt("Parameter Config (Name,Unit,Min,Max)", `${currentName},${(typeof p ==='object' ? p.unit||'' : '')},${(typeof p ==='object' ? p.min||0 : 0)},${(typeof p ==='object' ? p.max||1 : 1)}`, (val) => {
+                    const parts = val.split(',');
+                    bp.params[idx] = { name: parts[0], unit: parts[1]||'', min: parseFloat(parts[2])||0, max: parseFloat(parts[3])||1 };
+                    App.selectBlueprint(bp); App.autoSave();
+                });
+            }
+        };
+
+        const Exporter = {
+            saveToHTML() {
+                document.querySelectorAll('[data-key]').forEach(el => { DB.uiText[el.getAttribute('data-key')] = el.innerText; });
+                PROJECT_STATE.nodes = App.graph.nodes; PROJECT_STATE.edges = App.graph.edges; PROJECT_STATE.lastX = App.lastX;
+                let html = document.documentElement.outerHTML;
+                const dbRegex = /var DB = \{[\s\S]*?\}\;/; const stateRegex = /var PROJECT_STATE = \{[\s\S]*?\}\;/;
+                const newDBStr = "var DB = " + JSON.stringify(DB, null, 4) + ";"; const newStateStr = "var PROJECT_STATE = " + JSON.stringify(PROJECT_STATE, null, 4) + ";";
+                if (html.match(dbRegex)) html = html.replace(dbRegex, newDBStr); if (html.match(stateRegex)) html = html.replace(stateRegex, newStateStr);
+                const blob = new Blob(['<!DOCTYPE html>\n' + html], {type: 'text/html'}); saveAs(blob, 'ableton_planner_final.html');
+            }
+        };
+
+        const App = {
+            graph: null, CLI: { toggle: () => document.getElementById('cmd-overlay').classList.toggle('hidden') }, lastX: 100, selectedNode: null, selectedEdge: null, mode: 'run',
+            init() {
+                Modal.init(); DebugSys.init(); this.graph = new GraphEngine('mapper-canvas');
+                const saved = localStorage.getItem('ableton_session');
+                if(saved) { try { const session = JSON.parse(saved); if(session.db) DB = session.db; if(session.state) { PROJECT_STATE = session.state; } } catch(e) { console.warn("Saved session corrupted, resetting."); } }
+                this.graph.loadState(PROJECT_STATE); HelperEngine.init({ autoScanOnInit: true }).then(() => { Theme.apply(); });
+                this.renderBrowser(); document.getElementById('search').addEventListener('input', e => this.renderBrowser(e.target.value));
+            },
+            autoSave(snapshot = true) { if(snapshot) History.snapshot(); const session = { db: DB, state: { nodes: this.graph.nodes, edges: this.graph.edges, lastX: this.lastX } }; localStorage.setItem('ableton_session', JSON.stringify(session)); },
+            setMode(mode) {
+                this.mode = mode; document.body.classList.toggle('edit-mode', mode === 'edit');
+                document.getElementById('btn-run').className = mode === 'run' ? "flex-1 bg-white text-black font-bold py-1 rounded text-[10px]" : "flex-1 bg-[#333] text-white py-1 rounded text-[10px]";
+                document.getElementById('btn-edit').className = mode === 'edit' ? "flex-1 bg-white text-black font-bold py-1 rounded text-[10px]" : "flex-1 bg-[#333] text-white py-1 rounded text-[10px]";
+                document.getElementById('builder-controls').classList.toggle('hidden', mode !== 'edit');
+                document.getElementById('mode-display').innerText = mode.toUpperCase();
+                document.querySelectorAll('.editable-text').forEach(el => el.contentEditable = (mode === 'edit'));
+                HelperEngine.setMode(mode); this.select(null);
+            },
+            renderBrowser(filter = '') {
+                const list = document.getElementById('device-list'); list.innerHTML = ''; const cats = {};
+                (DB.library || []).forEach(d => { if(!d.name) return; if(d.name.toLowerCase().includes(filter.toLowerCase())) { const cat = d.category || "Uncategorized"; if(!cats[cat]) cats[cat] = []; cats[cat].push(d); } });
+                Object.keys(cats).sort().forEach(cat => {
+                    const header = document.createElement('div'); header.className = 'cat-header'; header.innerText = cat; list.appendChild(header);
+                    cats[cat].forEach(item => {
+                        const el = document.createElement('div'); el.className = 'device-item'; el.innerHTML = `<span>${item.name}</span>`;
+                        el.onclick = () => { if(this.mode === 'run') { this.graph.addNode(item, this.lastX, 200); this.lastX += 200; console.log(`Added ${item.name}`); } else { this.selectBlueprint(item); } };
+                        list.appendChild(el);
+                    });
+                });
+            },
+            toggleSidebar() { const sb = document.getElementById('sidebar'); if(sb.style.width === '0px') { sb.style.width = '16rem'; sb.style.padding = ''; } else { sb.style.width = '0px'; sb.style.padding = '0'; } },
+            select(node) {
+                this.selectedNode = node; const panel = document.getElementById('inspector-content');
+                if(!node && this.mode === 'edit') {
+                    panel.innerHTML = `
+                        <div class="bg-white text-black font-bold p-2 text-center mb-4 rounded">APP BUILDER</div>
+                        <div class="text-[10px] font-bold text-accent uppercase mb-2">Theme Colors</div>
+                        <div class="space-y-2">
+                            ${Object.keys(DB.theme).map(k => `<div class="flex justify-between items-center bg-[#222] p-1 rounded"><span class="capitalize">${k}</span><input type="color" value="${DB.theme[k]}" onchange="Theme.update('${k}', this.value)" class="bg-transparent w-6 h-6 border-none cursor-pointer"></div>`).join('')}
+                        </div>`;
+                    return;
+                }
+                if(!node) { panel.innerHTML = '<div class="opacity-50 text-center mt-10">Select an object</div>'; return; }
+                panel.innerHTML = `
+                    <div class="mb-4"><label class="text-[10px] text-muted">Instance Name</label><input type="text" value="${node.label}" onchange="App.renameInstance('${node.id}', this.value)" class="w-full bg-[#111] text-white p-1 text-sm border border-[#333]"></div>
+                    <div class="text-[10px] bg-[#222] p-1 mb-4 rounded font-mono text-accent text-center">${node.id}</div>
+                    <div class="text-[10px] font-bold text-muted uppercase mb-2">Parameters</div><div id="insp-params" class="space-y-1 mb-4"></div>
+                    <button onclick="App.deleteSelected()" class="w-full mt-4 bg-red-900/50 hover:bg-red-900 text-white text-xs py-1 rounded">Delete</button>
+                `;
+                const list = document.getElementById('insp-params');
+                node.params.forEach(p => {
+                    const row = document.createElement('div'); row.className = "flex justify-between text-xs bg-[#2a2a2a] p-1 px-2 rounded";
+                    row.innerHTML = `<span>${p.label}</span> <span class="${p.mappedBy?'text-accent':''}">${(p.val*100).toFixed(0)}%</span>`;
+                    list.appendChild(row);
+                });
+            },
+            renameInstance(id, val) { const node = this.graph.nodes.find(n => n.id === id); if(node) { node.label = val; this.autoSave(); } },
+            selectBlueprint(bp) {
+                const panel = document.getElementById('inspector-content');
+                panel.innerHTML = `
+                    <div class="bg-white text-black font-bold p-2 text-center mb-4 rounded">EDIT DEVICE</div>
+                    <div class="mb-2">Name: <input type="text" value="${bp.name}" onchange="App.updateBP('${bp.id}', 'name', this.value)" class="bg-[#111] text-white p-1 w-full text-xs"></div>
+                    <div class="mb-2">Category: <input type="text" value="${bp.category}" onchange="App.updateBP('${bp.id}', 'category', this.value)" class="bg-[#111] text-white p-1 w-full text-xs"></div>
+                    <div class="flex gap-2 mb-2">
+                        <div>W: <input type="number" value="${bp.width||160}" onchange="App.updateBP('${bp.id}', 'width', parseInt(this.value))" class="bg-[#111] w-12 text-white p-1 text-xs"></div>
+                        <div>H: <input type="number" value="${bp.height||''}" placeholder="Auto" onchange="App.updateBP('${bp.id}', 'height', parseInt(this.value))" class="bg-[#111] w-12 text-white p-1 text-xs"></div>
+                    </div>
+                    <div class="mb-2 flex items-center justify-between"><span>Color:</span><input type="color" value="${bp.headerColor}" onchange="App.updateBP('${bp.id}', 'headerColor', this.value)"></div>
+                    <div class="text-[10px] font-bold text-muted uppercase mt-4 mb-2">Params</div><div id="bp-params" class="space-y-1 mb-2"></div>
+                    <div class="flex gap-1"><input type="text" id="new-bp-param" placeholder="Add Param..." class="bg-[#111] text-white p-1 text-xs flex-1"><button onclick="App.addParamToBP('${bp.id}')" class="bg-[#333] px-2 text-xs">+</button></div>
+                    <button onclick="Builder.deleteBlueprint('${bp.id}')" class="w-full mt-8 bg-red-900/50 hover:bg-red-900 text-white text-xs py-1 rounded">Delete From Library</button>
+                `;
+                const list = document.getElementById('bp-params');
+                bp.params.forEach((p, idx) => {
+                    const row = document.createElement('div'); row.className = "flex justify-between items-center text-xs bg-[#2a2a2a] p-1 px-2 rounded";
+                    const pName = (typeof p === 'object') ? p.name : p;
+                    row.innerHTML = `<span>${pName}</span> <div class="flex gap-2">
+                        <button onclick="Builder.editParamDetails('${bp.id}', ${idx})" title="Settings">⚙</button>
+                        <button onclick="App.moveParamBP('${bp.id}', ${idx}, -1)" class="hover:text-white">↑</button>
+                        <button onclick="App.removeParamFromBP('${bp.id}', ${idx})" class="text-red-500">×</button></div>`;
+                    list.appendChild(row);
+                });
+            },
+            updateBP(id, field, val) { const bp = DB.library.find(b => b.id === id); if(bp) { bp[field] = val; this.renderBrowser(); this.autoSave(); } },
+            addParamToBP(id) { const val = document.getElementById('new-bp-param').value; const bp = DB.library.find(b => b.id === id); if(bp && val) { bp.params.push(val); this.selectBlueprint(bp); this.autoSave(); } },
+            removeParamFromBP(id, idx) { const bp = DB.library.find(b => b.id === id); if(bp) { bp.params.splice(idx, 1); this.selectBlueprint(bp); this.autoSave(); } },
+            moveParamBP(id, idx, dir) { const bp = DB.library.find(b => b.id === id); if(bp) { const newIdx = idx + dir; if(newIdx >= 0 && newIdx < bp.params.length) { const temp = bp.params[idx]; bp.params[idx] = bp.params[newIdx]; bp.params[newIdx] = temp; this.selectBlueprint(bp); this.autoSave(); } } },
+            deleteSelected() { if(this.selectedNode) { this.graph.removeNode(this.selectedNode.id); this.select(null); } },
+            clear() { Modal.confirm("Clear Project", "This will erase your current layout.", () => { this.graph.nodes = []; this.graph.edges = []; this.lastX = 100; this.select(null); localStorage.removeItem('ableton_session'); }); }
+        };
+
+        window.addEventListener('DOMContentLoaded', () => App.init());
+    </script>
+</body>
+</html>
