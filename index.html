@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Ableton Live | Systems Planner v6.2</title>
+    <title>Ableton Live | Systems Planner v6.3</title>
     
     <!-- Dependencies -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -95,14 +95,14 @@
 
     <!-- DROP ZONE OVERLAY -->
     <div id="drop-overlay" class="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center border-4 border-dashed border-accent m-4 rounded-xl">
-        <div class="text-2xl font-bold text-accent">DROP FILE (.json, .html, .ch)</div>
+        <div class="text-2xl font-bold text-accent">DROP FILE TO LOAD (.json, .html, .ch)</div>
     </div>
 
     <!-- LEFT SIDEBAR -->
     <div id="sidebar" class="w-64 bg-panel flex flex-col border-r border-main z-20 flex-shrink-0 transition-all duration-200">
         <div class="h-10 flex items-center justify-between px-3 bg-panel border-b border-main">
             <span class="font-bold tracking-wide" data-editable data-key="browserTitle">BROWSER</span>
-            <span class="text-[10px] opacity-50" data-editable data-key="versionText">LIB v6.2</span>
+            <span class="text-[10px] opacity-50" data-editable data-key="versionText">LIB v6.3</span>
         </div>
         <div class="p-2 border-b border-main">
             <input type="text" id="search" placeholder="Filter devices..." class="w-full bg-[#111] text-xs p-1.5 rounded text-white focus:outline-none border border-transparent focus:border-white">
@@ -132,6 +132,9 @@
                 <span class="font-bold" data-editable data-key="projectTitle" id="project-name">Untitled Project</span>
             </div>
             <div class="flex gap-2 items-center">
+                 <button onclick="Actions.history_undo()" class="bg-[#333] hover:bg-[#444] border border-main w-6 h-6 flex items-center justify-center rounded-full text-[12px] font-bold text-accent" title="Undo (Ctrl+Z)">⟲</button>
+                 <button onclick="Actions.history_redo()" class="bg-[#333] hover:bg-[#444] border border-main w-6 h-6 flex items-center justify-center rounded-full text-[12px] font-bold text-accent" title="Redo (Ctrl+Y)">⟳</button>
+                 <div class="h-4 w-[1px] bg-[#444] mx-1"></div>
                  <button onclick="Actions.show_help()" class="bg-[#333] hover:bg-[#444] border border-main w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-bold text-accent">?</button>
                  <button onclick="Actions.cmd_add()" class="bg-[#333] hover:bg-[#444] border border-main px-3 py-1 rounded text-[10px] text-accent font-bold" title="Ctrl+K">CMD</button>
                  <button onclick="DebugSys.toggle()" class="bg-[#333] hover:bg-[#444] border border-main px-3 py-1 rounded text-[10px] text-red-400 font-bold">DEBUG</button>
@@ -191,7 +194,7 @@
     <!-- HELP OVERLAY -->
     <div id="help-overlay" class="fixed inset-0 z-50 bg-black/80 hidden flex items-center justify-center" onclick="if(event.target===this) document.getElementById('help-overlay').classList.add('hidden')">
         <div class="w-[600px] bg-panel border border-[#444] shadow-2xl rounded-md overflow-hidden flex flex-col max-h-[80vh]">
-            <div class="p-4 bg-[#222] border-b border-[#444] font-bold text-lg text-white">System Documentation v6.2</div>
+            <div class="p-4 bg-[#222] border-b border-[#444] font-bold text-lg text-white">System Documentation v6.3</div>
             <div class="p-6 overflow-y-auto text-sm text-[#ccc] space-y-4" id="help-content"></div>
         </div>
     </div>
@@ -241,7 +244,7 @@
                 { key: "y", ctrl: true, action: "history_redo", desc: "Redo" }
             ],
             theme: { bg: '#1e1e1e', panel: '#282828', header: '#4a4a4a', text: '#dcdcdc', accent: '#ff764d', selection: '#00d2be', border: '#111111' },
-            uiText: { browserTitle: "BROWSER", versionText: "LIB v6.2", projectTitle: "Untitled Project", inspectorTitle: "INSPECTOR" }
+            uiText: { browserTitle: "BROWSER", versionText: "LIB v6.3", projectTitle: "Untitled Project", inspectorTitle: "INSPECTOR" }
         };
         // Initial Empty State
         var PROJECT_DATA = { activeTab: 'main', tabs: [{ id: 'main', name: 'Main Rack', nodes: [], edges: [], lastX: 100 }] };
@@ -312,7 +315,11 @@
                 // Push entire PROJECT_DATA to history
                 if (this.pointer < this.stack.length - 1) this.stack = this.stack.slice(0, this.pointer + 1);
                 this.stack.push(JSON.parse(JSON.stringify(PROJECT_DATA)));
-                if (this.stack.length > this.limit) this.stack.shift(); else this.pointer++;
+                if (this.stack.length > this.limit) {
+                    this.stack.shift();
+                } else {
+                    this.pointer++;
+                }
                 App.autoSave(false);
             },
             undo() { if (this.pointer > 0) { this.pointer--; this.restore(); } },
@@ -367,6 +374,7 @@
             init() { this.render(); },
             render() {
                 const bar = document.getElementById('tabs-bar'); bar.innerHTML = '';
+                if(!PROJECT_DATA.tabs) PROJECT_DATA.tabs = [{ id: 'main', name: 'Main Rack', nodes: [], edges: [], lastX: 100 }];
                 PROJECT_DATA.tabs.forEach(t => {
                     const el = document.createElement('div');
                     el.className = `tab-item ${t.id === PROJECT_DATA.activeTab ? 'active' : ''}`;
@@ -476,7 +484,8 @@
                 const content = document.getElementById('help-content');
                 let html = `<b>Keybindings:</b><ul class="list-disc pl-4 mb-4">`;
                 DB.keybindings.forEach(k => html += `<li><span class="font-mono text-accent">${k.ctrl?'Ctrl+':''}${k.key.toUpperCase()}</span> : ${k.desc || k.action}</li>`);
-                html += `</ul><b>New Features v6.2:</b><ul class="list-disc pl-4">
+                html += `</ul><b>New Features v6.3:</b><ul class="list-disc pl-4">
+                    <li><b>Undo/Redo:</b> Top-right buttons added.</li>
                     <li><b>Device Import:</b> Drag & drop .ch files (made with Device Designer) to add devices with full parameter data.</li>
                     <li><b>Tabs:</b> Create multiple maps in one project.</li>
                     <li><b>Drag & Drop Loading:</b> Drag .json or .html files onto the screen to load them as new tabs.</li>
@@ -606,7 +615,10 @@
                 
                 // MODULATION ENGINE
                 const time = Date.now() / 1000;
-                this.nodes.forEach(n => n.params.forEach(p => p.modVal = 0)); // Reset mods
+                this.nodes.forEach(n => {
+                    if(n.params) n.params.forEach(p => p.modVal = 0)
+                }); 
+                
                 this.edges.forEach(e => {
                     if(e.type === 'mod') {
                         const src = this.nodes.find(n => n.id === e.fromNode);
@@ -631,6 +643,7 @@
                 ctx.restore(); requestAnimationFrame(this.loop);
             }
             drawNode(ctx, n) {
+                if(!n || !n.params) return;
                 const isSelected = App.selectedNode === n;
                 ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.roundRect(n.x+4, n.y+4, n.w, n.h, 6); ctx.fill();
                 ctx.fillStyle = DB.theme.panel; ctx.strokeStyle = isSelected ? '#fff' : '#000'; ctx.lineWidth = isSelected ? 2 : 1;
@@ -854,7 +867,7 @@
                 const dbRegex = /var DB = \{[\s\S]*?\}\;/; const stateRegex = /var PROJECT_DATA = \{[\s\S]*?\}\;/;
                 const newDBStr = "var DB = " + JSON.stringify(DB, null, 4) + ";"; const newStateStr = "var PROJECT_DATA = " + JSON.stringify(PROJECT_DATA, null, 4) + ";";
                 if (html.match(dbRegex)) html = html.replace(dbRegex, newDBStr); if (html.match(stateRegex)) html = html.replace(stateRegex, newStateStr);
-                const blob = new Blob(['<!DOCTYPE html>\n' + html], {type: 'text/html'}); saveAs(blob, 'ableton_planner_v6.2.html');
+                const blob = new Blob(['<!DOCTYPE html>\n' + html], {type: 'text/html'}); saveAs(blob, 'ableton_planner_v6.3.html');
             }
         };
 
@@ -878,6 +891,11 @@
                     } catch(e) { console.warn("Saved session corrupted, resetting.", e); } 
                 }
                 
+                // Final safety check for PROJECT_DATA integrity
+                if(!PROJECT_DATA.tabs || !Array.isArray(PROJECT_DATA.tabs) || PROJECT_DATA.tabs.length === 0) {
+                    PROJECT_DATA = { activeTab: 'main', tabs: [{ id: 'main', name: 'Main Rack', nodes: [], edges: [], lastX: 100 }] };
+                }
+
                 Tabs.init();
                 Tabs.loadTab(PROJECT_DATA.activeTab);
                 
@@ -900,6 +918,10 @@
                             reader.onload = async (ev) => {
                                 try {
                                     const arrayBuffer = ev.target.result;
+                                    // Check for DecompressionStream support
+                                    if (typeof DecompressionStream === 'undefined') {
+                                        throw new Error("Your browser does not support GZIP decompression (DecompressionStream). Please use Chrome, Edge, or a modern browser.");
+                                    }
                                     const stream = new Blob([arrayBuffer]).stream();
                                     const decompressedStream = stream.pipeThrough(new DecompressionStream('gzip'));
                                     const text = await new Response(decompressedStream).text();
