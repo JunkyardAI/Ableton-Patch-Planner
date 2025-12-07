@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Ableton Live | Systems Planner (Ultimate)</title>
+    <title>Ableton Live | Systems Planner v6.0</title>
     
     <!-- Dependencies -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -37,6 +37,7 @@
         canvas { display: block; outline: none; }
         .cursor-grab { cursor: grab; }
         .cursor-grabbing { cursor: grabbing; }
+        .cursor-nwse-resize { cursor: nwse-resize; }
         
         /* COMPONENTS */
         .bg-panel { background-color: var(--panel-color); }
@@ -47,6 +48,13 @@
         .cat-header { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #929292; padding: 12px 12px 4px; letter-spacing: 0.05em; }
         .device-item { padding: 6px 12px; cursor: pointer; font-size: 12px; border-left: 2px solid transparent; }
         .device-item:hover { background-color: #3a3a3a; border-left-color: #929292; }
+        
+        /* TABS */
+        .tab-item { padding: 4px 12px; font-size: 11px; background: #111; color: #666; border-radius: 4px 4px 0 0; cursor: pointer; border-right: 1px solid #222; min-width: 80px; text-align: center; position: relative;}
+        .tab-item.active { background: var(--panel-color); color: var(--accent-color); font-weight: bold; }
+        .tab-item:hover { color: #fff; }
+        .tab-close { position: absolute; right: 4px; top: 4px; opacity: 0; font-size: 9px; }
+        .tab-item:hover .tab-close { opacity: 1; }
         
         /* CONTEXT MENU */
         #context-menu { position: fixed; background: #222; border: 1px solid #444; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 1000; min-width: 150px; border-radius: 4px; padding: 4px 0; }
@@ -72,19 +80,29 @@
         #cmd-overlay, #keymap-overlay, #help-overlay, #generic-modal { backdrop-filter: blur(4px); transition: all 0.1s; }
         .cmd-suggestion { padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; font-family: monospace; font-size: 12px; border-bottom: 1px solid #333; }
         .cmd-suggestion:hover { background-color: var(--accent-color); color: #000; }
+        .cmd-suggestion.selected { background-color: #333; color: white; border-left: 3px solid var(--accent-color); }
         
         /* Inputs */
         .iso-input { background: #111; border: 1px solid #444; color: white; padding: 2px 4px; font-size: 10px; border-radius: 2px; width: 100%; }
         .iso-input:focus { border-color: var(--accent-color); outline: none; }
+        
+        /* Drag Overlay */
+        #drop-overlay { pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+        body.drag-active #drop-overlay { opacity: 1; }
     </style>
 </head>
 <body class="flex h-screen w-screen font-sans text-xs" oncontextmenu="return false;">
+
+    <!-- DROP ZONE OVERLAY -->
+    <div id="drop-overlay" class="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center border-4 border-dashed border-accent m-4 rounded-xl">
+        <div class="text-2xl font-bold text-accent">DROP FILE TO LOAD TAB</div>
+    </div>
 
     <!-- LEFT SIDEBAR -->
     <div id="sidebar" class="w-64 bg-panel flex flex-col border-r border-main z-20 flex-shrink-0 transition-all duration-200">
         <div class="h-10 flex items-center justify-between px-3 bg-panel border-b border-main">
             <span class="font-bold tracking-wide" data-editable data-key="browserTitle">BROWSER</span>
-            <span class="text-[10px] opacity-50" data-editable data-key="versionText">LIB v5.5</span>
+            <span class="text-[10px] opacity-50" data-editable data-key="versionText">LIB v6.0</span>
         </div>
         <div class="p-2 border-b border-main">
             <input type="text" id="search" placeholder="Filter devices..." class="w-full bg-[#111] text-xs p-1.5 rounded text-white focus:outline-none border border-transparent focus:border-white">
@@ -115,16 +133,20 @@
             </div>
             <div class="flex gap-2 items-center">
                  <button onclick="Actions.show_help()" class="bg-[#333] hover:bg-[#444] border border-main w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-bold text-accent">?</button>
-                 <button onclick="Actions.cmd_add()" class="bg-[#333] hover:bg-[#444] border border-main px-3 py-1 rounded text-[10px] text-accent font-bold">CMD</button>
+                 <button onclick="Actions.cmd_add()" class="bg-[#333] hover:bg-[#444] border border-main px-3 py-1 rounded text-[10px] text-accent font-bold" title="Ctrl+K">CMD</button>
                  <button onclick="DebugSys.toggle()" class="bg-[#333] hover:bg-[#444] border border-main px-3 py-1 rounded text-[10px] text-red-400 font-bold">DEBUG</button>
                  <button onclick="Exporter.saveToHTML()" class="bg-[#00d2be] hover:bg-white text-black font-bold border border-main px-3 py-1 rounded text-[10px]">Save</button>
-                 <button onclick="App.clear()" class="bg-[#333] hover:bg-[#822] border border-main px-3 py-1 rounded text-[10px]">Clear</button>
+                 <button onclick="Tabs.addTab()" class="bg-[#333] hover:bg-[#555] text-white border border-main w-6 h-6 flex items-center justify-center rounded text-[10px]" title="New Tab">+</button>
             </div>
         </div>
+        
+        <!-- TABS BAR -->
+        <div id="tabs-bar" class="h-8 bg-[#151515] border-b border-main flex items-end px-2 gap-1 overflow-x-auto z-10"></div>
+
         <div id="canvas-container" class="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing">
             <canvas id="mapper-canvas"></canvas>
             <div class="absolute bottom-2 left-2 text-[10px] opacity-50 pointer-events-none">
-                Mode: <span id="mode-display">RUN</span> • Undo: Ctrl+Z
+                Mode: <span id="mode-display">RUN</span> • Undo: Ctrl+Z • Cmd: Ctrl+K
             </div>
         </div>
     </div>
@@ -139,7 +161,17 @@
 
     <!-- OVERLAYS -->
     <div id="context-menu" class="hidden"></div>
-    <div id="cmd-overlay" class="fixed inset-0 z-50 bg-black/70 hidden flex items-start justify-center pt-24" onclick="if(event.target===this) Actions.cmd_add()"><div class="w-[600px] bg-panel border border-[#444] shadow-2xl rounded-md overflow-hidden flex flex-col"><div class="p-3 border-b border-[#444] flex gap-2 items-center bg-[#222]"><span class="text-accent font-mono text-lg">></span><input type="text" id="cmd-input" class="bg-transparent border-none outline-none text-white w-full font-mono text-sm" placeholder="Type command..." autocomplete="off"></div><div id="cmd-suggestions" class="max-h-64 overflow-y-auto bg-[#1a1a1a]"></div></div></div>
+    
+    <!-- COMMAND PALETTE -->
+    <div id="cmd-overlay" class="fixed inset-0 z-50 bg-black/70 hidden flex items-start justify-center pt-24" onclick="if(event.target===this) document.getElementById('cmd-overlay').classList.add('hidden')">
+        <div class="w-[600px] bg-panel border border-[#444] shadow-2xl rounded-md overflow-hidden flex flex-col">
+            <div class="p-3 border-b border-[#444] flex gap-2 items-center bg-[#222]">
+                <span class="text-accent font-mono text-lg">></span>
+                <input type="text" id="cmd-input" class="bg-transparent border-none outline-none text-white w-full font-mono text-sm" placeholder="Type command..." autocomplete="off">
+            </div>
+            <div id="cmd-suggestions" class="max-h-64 overflow-y-auto bg-[#1a1a1a]"></div>
+        </div>
+    </div>
     
     <!-- GENERIC IN-APP MODAL -->
     <div id="generic-modal" class="fixed inset-0 z-50 bg-black/80 hidden flex items-center justify-center">
@@ -159,7 +191,7 @@
     <!-- HELP OVERLAY -->
     <div id="help-overlay" class="fixed inset-0 z-50 bg-black/80 hidden flex items-center justify-center" onclick="if(event.target===this) document.getElementById('help-overlay').classList.add('hidden')">
         <div class="w-[600px] bg-panel border border-[#444] shadow-2xl rounded-md overflow-hidden flex flex-col max-h-[80vh]">
-            <div class="p-4 bg-[#222] border-b border-[#444] font-bold text-lg text-white">System Documentation</div>
+            <div class="p-4 bg-[#222] border-b border-[#444] font-bold text-lg text-white">System Documentation v6.0</div>
             <div class="p-6 overflow-y-auto text-sm text-[#ccc] space-y-4" id="help-content"></div>
         </div>
     </div>
@@ -196,7 +228,7 @@
                 { id: "compressor", name: "Compressor", category: "Audio Effects", headerColor: "#24B6E6", width: 200, params: [{name:"Threshold", unit:"dB", min:-60, max:0}, {name:"Ratio", unit:":1", min:1, max:20}, "Attack", "Release", "Knee", "Sidechain"] }
             ],
             menus: {
-                canvas: [{ label: "New Device", action: "cmd_add" }, { label: "Reset View", action: "view_reset" }, { divider: true }, { label: "Clear All", action: "file_clear" }],
+                canvas: [{ label: "New Device", action: "cmd_add" }, { label: "Reset View", action: "view_reset" }, { divider: true }, { label: "New Tab", action: "tab_new" }, { label: "Clear Page", action: "file_clear" }],
                 node: [{ label: "Rename", action: "node_rename" }, { label: "Unplug Cables", action: "node_disconnect" }, { divider: true }, { label: "Group (Ctrl+G)", action: "node_group" }, { label: "Duplicate", action: "node_duplicate" }, { label: "Delete", action: "node_delete" }]
             },
             keybindings: [
@@ -209,13 +241,14 @@
                 { key: "y", ctrl: true, action: "history_redo", desc: "Redo" }
             ],
             theme: { bg: '#1e1e1e', panel: '#282828', header: '#4a4a4a', text: '#dcdcdc', accent: '#ff764d', selection: '#00d2be', border: '#111111' },
-            uiText: { browserTitle: "BROWSER", versionText: "LIB v5.2", projectTitle: "Untitled Project", inspectorTitle: "INSPECTOR" }
+            uiText: { browserTitle: "BROWSER", versionText: "LIB v6.0", projectTitle: "Untitled Project", inspectorTitle: "INSPECTOR" }
         };
-        var PROJECT_STATE = { nodes: [], edges: [], lastX: 100 };
+        // Initial Empty State
+        var PROJECT_DATA = { activeTab: 'main', tabs: [{ id: 'main', name: 'Main Rack', nodes: [], edges: [], lastX: 100 }] };
     </script>
 
     <!-- ================================================================= -->
-    <!-- MODULE: MODAL SYSTEM (New)                                        -->
+    <!-- MODULE: MODAL SYSTEM                                              -->
     <!-- ================================================================= -->
     <script>
         const Modal = {
@@ -239,7 +272,6 @@
                 this.btnConfirm.replaceWith(newBtn);
                 this.btnConfirm = newBtn;
             },
-            // 1. Prompt (Text Input)
             prompt(title, value, onConfirm) {
                 this.reset();
                 this.title.innerText = title;
@@ -250,7 +282,6 @@
                 this.btnConfirm.onclick = () => { this.close(); if(onConfirm) onConfirm(this.input.value); };
                 this.input.onkeydown = (e) => { if(e.key === 'Enter') this.btnConfirm.click(); };
             },
-            // 2. Confirm (Yes/No)
             confirm(title, message, onConfirm) {
                 this.reset();
                 this.title.innerText = title;
@@ -258,7 +289,6 @@
                 this.el.classList.remove('hidden');
                 this.btnConfirm.onclick = () => { this.close(); if(onConfirm) onConfirm(); };
             },
-            // 3. Editor (JSON)
             editor(title, value, onConfirm) {
                 this.reset();
                 this.title.innerText = title;
@@ -277,8 +307,11 @@
         const History = {
             stack: [], pointer: -1, limit: 50,
             snapshot() {
+                // Save current page state
+                Tabs.updateCurrentTabData();
+                // Push entire PROJECT_DATA to history
                 if (this.pointer < this.stack.length - 1) this.stack = this.stack.slice(0, this.pointer + 1);
-                this.stack.push(JSON.parse(JSON.stringify({ nodes: App.graph.nodes, edges: App.graph.edges })));
+                this.stack.push(JSON.parse(JSON.stringify(PROJECT_DATA)));
                 if (this.stack.length > this.limit) this.stack.shift(); else this.pointer++;
                 App.autoSave(false);
             },
@@ -286,7 +319,11 @@
             redo() { if (this.pointer < this.stack.length - 1) { this.pointer++; this.restore(); } },
             restore() {
                 const state = this.stack[this.pointer];
-                if(state) { App.graph.nodes = JSON.parse(JSON.stringify(state.nodes)); App.graph.edges = JSON.parse(JSON.stringify(state.edges)); App.select(null); }
+                if(state) { 
+                    PROJECT_DATA = JSON.parse(JSON.stringify(state)); 
+                    Tabs.render();
+                    Tabs.loadTab(PROJECT_DATA.activeTab);
+                }
             }
         };
     </script>
@@ -315,11 +352,73 @@
             },
             runDiagnostics() {
                 this.clear(); let errors = 0;
-                ['App','GraphEngine','HelperEngine','DB','Actions','Builder','History'].forEach(mod => { if(typeof window[mod] === 'undefined') { this.addEntry('ERROR', [`Module '${mod}' missing.`]); errors++; } });
-                [...DB.menus.canvas, ...DB.menus.node].forEach(m => { if(m.action && !Actions[m.action]) { this.addEntry('ERROR', [`Menu broken: ${m.label}`]); errors++; } });
-                DB.keybindings.forEach(k => { if(!Actions[k.action]) { this.addEntry('ERROR', [`Key broken: ${k.key}`]); errors++; } });
+                ['App','GraphEngine','HelperEngine','DB','Actions','Builder','History','Tabs'].forEach(mod => { if(typeof window[mod] === 'undefined') { this.addEntry('ERROR', [`Module '${mod}' missing.`]); errors++; } });
                 if(errors === 0) { this.addEntry('SUCCESS', ['System Healthy.']); document.getElementById('debug-health').innerText = "Healthy"; document.getElementById('debug-health').style.color = "var(--success-color)"; } 
                 else { document.getElementById('debug-health').innerText = `${errors} Issues`; document.getElementById('debug-health').style.color = "var(--error-color)"; }
+            }
+        };
+    </script>
+
+    <!-- ================================================================= -->
+    <!-- MODULE: TABS SYSTEM (NEW)                                         -->
+    <!-- ================================================================= -->
+    <script>
+        const Tabs = {
+            init() { this.render(); },
+            render() {
+                const bar = document.getElementById('tabs-bar'); bar.innerHTML = '';
+                PROJECT_DATA.tabs.forEach(t => {
+                    const el = document.createElement('div');
+                    el.className = `tab-item ${t.id === PROJECT_DATA.activeTab ? 'active' : ''}`;
+                    el.innerHTML = `<span>${t.name}</span><span class="tab-close" onclick="Tabs.closeTab('${t.id}', event)">✕</span>`;
+                    el.onclick = (e) => { if(!e.target.classList.contains('tab-close')) this.switchTab(t.id); };
+                    bar.appendChild(el);
+                });
+            },
+            addTab(name = "New Page", data = null) {
+                this.updateCurrentTabData();
+                const newId = 'page_' + Math.random().toString(36).substr(2, 9);
+                const newTab = data ? { ...data, id: newId, name: name } : { id: newId, name: name, nodes: [], edges: [], lastX: 100 };
+                PROJECT_DATA.tabs.push(newTab);
+                this.switchTab(newId);
+            },
+            switchTab(id) {
+                this.updateCurrentTabData();
+                PROJECT_DATA.activeTab = id;
+                this.loadTab(id);
+                this.render();
+                App.autoSave(false); // don't snapshot every tab switch
+            },
+            loadTab(id) {
+                const tab = PROJECT_DATA.tabs.find(t => t.id === id);
+                if(tab) {
+                    App.graph.nodes = JSON.parse(JSON.stringify(tab.nodes));
+                    App.graph.edges = JSON.parse(JSON.stringify(tab.edges));
+                    App.lastX = tab.lastX || 100;
+                    App.select(null);
+                    App.graph.resetCamera();
+                }
+            },
+            closeTab(id, e) {
+                e.stopPropagation();
+                if(PROJECT_DATA.tabs.length <= 1) return alert("Cannot close last tab.");
+                Modal.confirm("Close Tab", "Are you sure?", () => {
+                    PROJECT_DATA.tabs = PROJECT_DATA.tabs.filter(t => t.id !== id);
+                    if(PROJECT_DATA.activeTab === id) this.switchTab(PROJECT_DATA.tabs[0].id);
+                    else this.render();
+                });
+            },
+            updateCurrentTabData() {
+                const tab = PROJECT_DATA.tabs.find(t => t.id === PROJECT_DATA.activeTab);
+                if(tab) {
+                    tab.nodes = JSON.parse(JSON.stringify(App.graph.nodes));
+                    tab.edges = JSON.parse(JSON.stringify(App.graph.edges));
+                    tab.lastX = App.lastX;
+                }
+            },
+            renameCurrent(newName) {
+                const tab = PROJECT_DATA.tabs.find(t => t.id === PROJECT_DATA.activeTab);
+                if(tab) { tab.name = newName; this.render(); }
             }
         };
     </script>
@@ -329,7 +428,45 @@
     <!-- ================================================================= -->
     <script>
         const Actions = {
-            cmd_add: () => App.CLI.toggle(),
+            cmd_add: () => {
+                const overlay = document.getElementById('cmd-overlay');
+                overlay.classList.remove('hidden');
+                const input = document.getElementById('cmd-input');
+                input.value = ''; input.focus();
+                Actions.renderCmdSuggestions('');
+                
+                input.oninput = (e) => Actions.renderCmdSuggestions(e.target.value);
+                input.onkeydown = (e) => {
+                    if(e.key === 'Enter') {
+                        const first = document.querySelector('.cmd-suggestion');
+                        if(first) first.click();
+                    }
+                    if(e.key === 'Escape') overlay.classList.add('hidden');
+                };
+            },
+            renderCmdSuggestions: (filter) => {
+                const list = document.getElementById('cmd-suggestions'); list.innerHTML = '';
+                const term = filter.toLowerCase();
+                // Collect all commands
+                let commands = [];
+                Object.keys(Actions).forEach(k => commands.push({ name: k, action: k, source: 'System' }));
+                DB.menus.canvas.forEach(m => { if(!m.divider) commands.push({name: m.label, action: m.action, source: 'Menu'}); });
+                
+                commands = commands.filter(c => c.name.toLowerCase().includes(term));
+                
+                commands.forEach(c => {
+                    const el = document.createElement('div');
+                    el.className = 'cmd-suggestion';
+                    el.innerHTML = `<span>${c.name}</span><span class="text-xs text-gray-500">${c.source}</span>`;
+                    el.onclick = () => { 
+                        Actions[c.action](); 
+                        document.getElementById('cmd-overlay').classList.add('hidden'); 
+                    };
+                    list.appendChild(el);
+                });
+            },
+            tab_new: () => Modal.prompt("New Page Name", "Rack 2", (val) => Tabs.addTab(val)),
+            tab_rename: () => Modal.prompt("Rename Page", "", (val) => Tabs.renameCurrent(val)),
             view_reset: () => App.graph.resetCamera(),
             file_clear: () => App.clear(),
             history_undo: () => History.undo(),
@@ -339,7 +476,13 @@
                 const content = document.getElementById('help-content');
                 let html = `<b>Keybindings:</b><ul class="list-disc pl-4 mb-4">`;
                 DB.keybindings.forEach(k => html += `<li><span class="font-mono text-accent">${k.ctrl?'Ctrl+':''}${k.key.toUpperCase()}</span> : ${k.desc || k.action}</li>`);
-                html += `</ul><b>Tips:</b><ul class="list-disc pl-4"><li><b>Edit Mode:</b> Resize panels via Inspector. Click Gear icon to edit parameters.</li><li><b>Wire:</b> Click wire then DEL to remove.</li></ul>`;
+                html += `</ul><b>New Features v6.0:</b><ul class="list-disc pl-4">
+                    <li><b>Tabs:</b> Create multiple maps in one project.</li>
+                    <li><b>Drag & Drop:</b> Drag .json or .html files onto the screen to load them as new tabs.</li>
+                    <li><b>Command Palette:</b> Ctrl+K to search all actions.</li>
+                    <li><b>Visual Modulation:</b> LFOs now animate their targets.</li>
+                    <li><b>Resize:</b> In Edit mode, drag bottom-right corner of devices.</li>
+                </ul>`;
                 content.innerHTML = html;
                 el.classList.remove('hidden');
             },
@@ -401,15 +544,6 @@
                     this.state.ui.mode = mode; document.body.classList.toggle('helper-edit-mode', mode === 'edit');
                     Object.values(this.state.domIndex).forEach(info => { if(info.editable){ info.el.contentEditable = (mode === 'edit'); info.el.classList.toggle('editable-active', mode === 'edit'); } });
                 },
-                exportMenu(){
-                    const choice = prompt("Export options:\n1 = Single HTML (Recommended)\n2 = ZIP Package\n3 = Electron (JSON)\n\nChoose 1, 2, or 3:", "1");
-                    if(choice === '1') Exporter.saveToHTML();
-                    else if(choice === '2') this.exportAsZip(`${document.title}_pkg`);
-                    else if(choice === '3') this.exportForElectron(`${document.title}_folder`);
-                },
-                buildProjectJSON() { return { db: window.DB || {}, state: window.App ? window.App.graph.nodes : [], meta: { created: new Date().toISOString() } }; },
-                async exportAsZip(folderName='project') { const zip = new JSZip(); const project = this.buildProjectJSON(); zip.file(`${folderName}/db.json`, JSON.stringify(project.db, null, 2)); zip.file(`${folderName}/state.json`, JSON.stringify(project.state, null, 2)); const content = await zip.generateAsync({type:"blob"}); saveAs(content, `${folderName}.zip`); },
-                async exportForElectron(folderName){ const project = this.buildProjectJSON(); const files = { 'db.json': JSON.stringify(project.db, null, 2), 'state.json': JSON.stringify(project.state, null, 2) }; if(window.electronAPI && window.electronAPI.saveFiles){ await window.electronAPI.saveFiles({folderName, files}); alert("Saved via IPC"); } else { alert("No Electron API."); } },
                 _injectHelpersUI(){ const css = document.createElement('style'); css.textContent = `.helper-inject-target { transition: all 0.2s; border: 1px solid transparent; border-radius: 4px; } .helper-edit-mode .helper-inject-target:hover { border-color: var(--accent-color); cursor: text; background: rgba(255,255,255,0.05); } .helper-edit-mode .editable-active { border-color: var(--selection-color); }`; document.head.appendChild(css); }
             };
             global.HelperEngine = Engine;
@@ -447,7 +581,7 @@
                     x: x, y: y, w: width, h: height,
                     params: blueprint.params.map((p, i) => {
                         const def = (typeof p === 'object') ? p : { name: p };
-                        return { id: `${id}_p_${i}`, label: def.name, relY: headerH + (i * rowH) + 10, val: 0.5, mappedBy: null, unit: def.unit || '', min: def.min !== undefined ? def.min : 0, max: def.max !== undefined ? def.max : 1 };
+                        return { id: `${id}_p_${i}`, label: def.name, relY: headerH + (i * rowH) + 10, val: 0.5, modVal: 0, mappedBy: null, unit: def.unit || '', min: def.min !== undefined ? def.min : 0, max: def.max !== undefined ? def.max : 1 };
                     })
                 };
                 this.nodes.push(node); History.snapshot(); return node;
@@ -468,6 +602,28 @@
                 ctx.save(); ctx.translate(this.offsetX, this.offsetY); ctx.scale(this.scale, this.scale);
                 const size = 5000; const step = 100; ctx.strokeStyle = '#252525'; ctx.lineWidth = 1; ctx.beginPath();
                 for(let x=-size; x<size; x+=step) { ctx.moveTo(x, -size); ctx.lineTo(x, size); } for(let y=-size; y<size; y+=step) { ctx.moveTo(-size, y); ctx.lineTo(size, y); } ctx.stroke();
+                
+                // MODULATION ENGINE
+                const time = Date.now() / 1000;
+                this.nodes.forEach(n => n.params.forEach(p => p.modVal = 0)); // Reset mods
+                this.edges.forEach(e => {
+                    if(e.type === 'mod') {
+                        const src = this.nodes.find(n => n.id === e.fromNode);
+                        const dst = this.nodes.find(n => n.id === e.toNode);
+                        if(src && dst) {
+                            const pRate = src.params.find(p => p.label === 'Rate') || { val: 0.1 };
+                            const pDepth = src.params.find(p => p.label === 'Depth') || { val: 1 };
+                            
+                            // LFO Math: Hz = (val * range), Depth = val
+                            const hz = 0.01 + (pRate.val * 20); // Scale 0-1 to 0-20Hz roughly
+                            const val = Math.sin(time * hz * Math.PI * 2) * pDepth.val;
+                            
+                            const targetP = dst.params.find(p => p.id === e.toParam);
+                            if(targetP) targetP.modVal = val;
+                        }
+                    }
+                });
+
                 this.edges.forEach(e => this.drawEdge(ctx, e));
                 if(this.tempWire) this.drawTempWire(ctx);
                 this.nodes.forEach(n => this.drawNode(ctx, n));
@@ -476,24 +632,49 @@
             drawNode(ctx, n) {
                 const isSelected = App.selectedNode === n;
                 ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.roundRect(n.x+4, n.y+4, n.w, n.h, 6); ctx.fill();
-                ctx.fillStyle = DB.theme.device; ctx.strokeStyle = isSelected ? '#fff' : '#000'; ctx.lineWidth = isSelected ? 2 : 1;
+                ctx.fillStyle = DB.theme.panel; ctx.strokeStyle = isSelected ? '#fff' : '#000'; ctx.lineWidth = isSelected ? 2 : 1;
                 ctx.beginPath(); ctx.roundRect(n.x, n.y, n.w, n.h, 6); ctx.fill(); ctx.stroke();
+                
+                // Header
                 ctx.fillStyle = n.headerColor; ctx.beginPath(); ctx.roundRect(n.x, n.y, n.w, 24, [6,6,0,0]); ctx.fill();
                 ctx.fillStyle = '#000'; ctx.font = 'bold 11px sans-serif'; 
                 const labelW = ctx.measureText(n.label).width;
                 if(labelW > n.w - 20) ctx.fillText(n.label.substring(0, 15) + '...', n.x+8, n.y+16);
                 else ctx.fillText(n.label, n.x+8, n.y+16);
+                
+                // Resize Handle
+                if(App.mode === 'edit') {
+                    ctx.fillStyle = '#666'; ctx.beginPath(); ctx.moveTo(n.x + n.w, n.y + n.h); ctx.lineTo(n.x + n.w - 10, n.y + n.h); ctx.lineTo(n.x + n.w, n.y + n.h - 10); ctx.fill();
+                }
+
+                // Params
                 ctx.font = '10px sans-serif';
                 n.params.forEach(p => {
                     const py = n.y + p.relY; const isMapped = p.mappedBy !== null;
                     ctx.fillStyle = isMapped ? DB.theme.accent : '#555'; ctx.beginPath(); ctx.arc(n.x, py, 4, 0, Math.PI*2); ctx.fill();
                     ctx.fillStyle = '#555'; ctx.beginPath(); ctx.arc(n.x + n.w, py, 4, 0, Math.PI*2); ctx.fill();
+                    
                     ctx.fillStyle = isMapped ? DB.theme.accent : DB.theme.text; 
                     const pW = ctx.measureText(p.label).width; const maxPW = n.w - 70; 
                     if(pW > maxPW) ctx.fillText(p.label.substring(0, 15)+'...', n.x+10, py+3);
                     else ctx.fillText(p.label, n.x+10, py+3);
+                    
+                    // Value Bar Background
                     ctx.fillStyle = '#222'; ctx.fillRect(n.x + n.w - 60, py - 4, 50, 6);
-                    ctx.fillStyle = isMapped ? DB.theme.accent : DB.theme.text; ctx.fillRect(n.x + n.w - 60, py - 4, 50 * p.val, 6);
+                    
+                    // Main Value
+                    ctx.fillStyle = isMapped ? DB.theme.accent : DB.theme.text; 
+                    let drawW = 50 * p.val;
+                    ctx.fillRect(n.x + n.w - 60, py - 4, drawW, 6);
+                    
+                    // Modulation
+                    if(p.modVal !== 0) {
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                        let modW = 50 * (p.modVal * 0.5); // scale mod to reasonable range
+                        let startX = (n.x + n.w - 60) + drawW;
+                        ctx.fillRect(startX, py - 4, modW, 6);
+                    }
+
                     if (p.min !== undefined) {
                         const realVal = p.min + (p.max - p.min) * p.val;
                         const display = p.unit ? `${Math.round(realVal)}${p.unit}` : realVal.toFixed(2);
@@ -510,7 +691,6 @@
                     ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.bezierCurveTo(p1.x + 50, p1.y, p2.x - 50, p2.y, p2.x, p2.y);
                     const isSelected = App.selectedEdge === e; ctx.strokeStyle = isSelected ? '#fff' : (e.type === 'mod' ? DB.theme.accent : '#777'); ctx.lineWidth = isSelected ? 3 : 2;
                     if(e.type === 'mod') ctx.setLineDash([4,4]); else ctx.setLineDash([]); ctx.stroke(); ctx.setLineDash([]);
-                    if (ctx.isPointInStroke && App.checkHit) { if (ctx.isPointInStroke(App.checkHit.x, App.checkHit.y)) App.checkHit.result = e; }
                 }
             }
             drawTempWire(ctx) { ctx.beginPath(); ctx.moveTo(this.tempWire.x, this.tempWire.y); ctx.lineTo(this.currentMx, this.currentMy); ctx.strokeStyle = '#fff'; ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]); }
@@ -520,6 +700,10 @@
                 cvs.addEventListener('wheel', e => { e.preventDefault(); this.scale = Math.min(Math.max(0.2, this.scale - e.deltaY * 0.001), 4); });
                 cvs.addEventListener('contextmenu', e => this.onCtx(e));
                 window.addEventListener('keydown', e => {
+                    // INPUT HYGIENE
+                    const active = document.activeElement;
+                    if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable) return;
+
                     if(!DB.keybindings) return;
                     const binding = DB.keybindings.find(b => {
                         const keyMatch = b.key.toLowerCase() === e.key.toLowerCase();
@@ -533,6 +717,10 @@
                 const wx = (x - this.offsetX) / this.scale; const wy = (y - this.offsetY) / this.scale;
                 for (let i = this.nodes.length - 1; i >= 0; i--) {
                     const n = this.nodes[i];
+                    // Resize Handle
+                    if (App.mode === 'edit' && wx > n.x + n.w - 15 && wx < n.x + n.w + 5 && wy > n.y + n.h - 15 && wy < n.y + n.h + 5) {
+                        return { type: 'resize', node: n };
+                    }
                     if (wx >= n.x && wx <= n.x + n.w && wy >= n.y && wy <= n.y + 24) return { type: 'header', node: n };
                     if (wx >= n.x - 10 && wx <= n.x + n.w + 10 && wy >= n.y && wy <= n.y + n.h) {
                         for(let p of n.params) {
@@ -557,7 +745,8 @@
                 const hit = this.hitTest(mx, my);
                 document.getElementById('context-menu').classList.add('hidden'); 
                 if(hit) {
-                    if(hit.type === 'header') { this.isDragging = true; this.dragNode = hit.node; this.dragStart = { x: mx, y: my, nodeX: hit.node.x, nodeY: hit.node.y }; App.select(hit.node); }
+                    if(hit.type === 'resize') { this.isResizing = true; this.dragNode = hit.node; this.dragStart = { x: mx, y: my, w: hit.node.w, h: hit.node.h }; }
+                    else if(hit.type === 'header') { this.isDragging = true; this.dragNode = hit.node; this.dragStart = { x: mx, y: my, nodeX: hit.node.x, nodeY: hit.node.y }; App.select(hit.node); }
                     else if (hit.type === 'out') { this.isWiring = true; this.wireStart = { node: hit.node, param: hit.param }; this.tempWire = { x: hit.node.x + hit.node.w, y: hit.node.y + hit.param.relY }; }
                     else if (hit.type === 'edge') { App.selectedEdge = hit.edge; App.select(null); }
                 } else { this.isPanning = true; this.panStart = { x: mx, y: my, ox: this.offsetX, oy: this.offsetY }; App.select(null); App.selectedEdge = null; }
@@ -565,11 +754,31 @@
             onMove(e) {
                 const rect = this.canvas.getBoundingClientRect(); const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
                 this.currentMx = (mx - this.offsetX) / this.scale; this.currentMy = (my - this.offsetY) / this.scale;
-                if(this.isDragging) { const dx = (mx - this.dragStart.x) / this.scale; const dy = (my - this.dragStart.y) / this.scale; this.dragNode.x = this.dragStart.nodeX + dx; this.dragNode.y = this.dragStart.nodeY + dy; }
-                if(this.isPanning) { this.offsetX = this.panStart.ox + (mx - this.panStart.x); this.offsetY = this.panStart.oy + (my - this.panStart.y); }
+                
+                if(this.isResizing) {
+                    const dx = (mx - this.dragStart.x) / this.scale;
+                    const dy = (my - this.dragStart.y) / this.scale;
+                    this.dragNode.w = Math.max(100, this.dragStart.w + dx);
+                    this.dragNode.h = Math.max(50, this.dragStart.h + dy);
+                    document.body.style.cursor = 'nwse-resize';
+                }
+                else if(this.isDragging) { 
+                    const dx = (mx - this.dragStart.x) / this.scale; 
+                    const dy = (my - this.dragStart.y) / this.scale; 
+                    this.dragNode.x = this.dragStart.nodeX + dx; 
+                    this.dragNode.y = this.dragStart.nodeY + dy; 
+                    document.body.style.cursor = 'grabbing';
+                }
+                else if(this.isPanning) { 
+                    this.offsetX = this.panStart.ox + (mx - this.panStart.x); 
+                    this.offsetY = this.panStart.oy + (my - this.panStart.y); 
+                    document.body.style.cursor = 'grabbing';
+                } else {
+                    document.body.style.cursor = 'default';
+                }
             }
             onEnd(e) {
-                if(this.isDragging) History.snapshot();
+                if(this.isDragging || this.isResizing) History.snapshot();
                 if(this.isWiring) {
                     const rect = this.canvas.getBoundingClientRect(); const hit = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
                     if(hit && hit.type === 'in' && hit.node.id !== this.wireStart.node.id) {
@@ -578,7 +787,8 @@
                         this.connect(this.wireStart.node.id, this.wireStart.param.id, hit.node.id, hit.param.id, type);
                     }
                 }
-                this.isDragging = false; this.isPanning = false; this.isWiring = false; this.tempWire = null;
+                this.isDragging = false; this.isPanning = false; this.isWiring = false; this.isResizing = false; this.tempWire = null;
+                document.body.style.cursor = 'default';
             }
             onCtx(e) {
                 e.preventDefault(); const rect = this.canvas.getBoundingClientRect(); const hit = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
@@ -598,7 +808,7 @@
             addNewDevice() {
                 Modal.prompt("Enter Device Name", "", (name) => {
                     if(!name) return;
-                    const category = "User"; // Simplify for now
+                    const category = "User";
                     const newDevice = { id: "user_" + Math.random().toString(36).substr(2,5), name: name, category: category, headerColor: "#999", width: 160, params: ["Param 1", "Param 2"], mapBtn: false };
                     DB.library.push(newDevice); 
                     document.getElementById('search').value = ''; 
@@ -638,12 +848,12 @@
         const Exporter = {
             saveToHTML() {
                 document.querySelectorAll('[data-key]').forEach(el => { DB.uiText[el.getAttribute('data-key')] = el.innerText; });
-                PROJECT_STATE.nodes = App.graph.nodes; PROJECT_STATE.edges = App.graph.edges; PROJECT_STATE.lastX = App.lastX;
+                Tabs.updateCurrentTabData();
                 let html = document.documentElement.outerHTML;
-                const dbRegex = /var DB = \{[\s\S]*?\}\;/; const stateRegex = /var PROJECT_STATE = \{[\s\S]*?\}\;/;
-                const newDBStr = "var DB = " + JSON.stringify(DB, null, 4) + ";"; const newStateStr = "var PROJECT_STATE = " + JSON.stringify(PROJECT_STATE, null, 4) + ";";
+                const dbRegex = /var DB = \{[\s\S]*?\}\;/; const stateRegex = /var PROJECT_DATA = \{[\s\S]*?\}\;/;
+                const newDBStr = "var DB = " + JSON.stringify(DB, null, 4) + ";"; const newStateStr = "var PROJECT_DATA = " + JSON.stringify(PROJECT_DATA, null, 4) + ";";
                 if (html.match(dbRegex)) html = html.replace(dbRegex, newDBStr); if (html.match(stateRegex)) html = html.replace(stateRegex, newStateStr);
-                const blob = new Blob(['<!DOCTYPE html>\n' + html], {type: 'text/html'}); saveAs(blob, 'ableton_planner_final.html');
+                const blob = new Blob(['<!DOCTYPE html>\n' + html], {type: 'text/html'}); saveAs(blob, 'ableton_planner_v6.html');
             }
         };
 
@@ -652,11 +862,70 @@
             init() {
                 Modal.init(); DebugSys.init(); this.graph = new GraphEngine('mapper-canvas');
                 const saved = localStorage.getItem('ableton_session');
-                if(saved) { try { const session = JSON.parse(saved); if(session.db) DB = session.db; if(session.state) { PROJECT_STATE = session.state; } } catch(e) { console.warn("Saved session corrupted, resetting."); } }
-                this.graph.loadState(PROJECT_STATE); HelperEngine.init({ autoScanOnInit: true }).then(() => { Theme.apply(); });
+                if(saved) { 
+                    try { 
+                        const session = JSON.parse(saved); 
+                        if(session.db) DB = session.db; 
+                        // Migration from Old Single State to Tabs
+                        if(session.state && !session.data) {
+                            PROJECT_DATA.tabs[0].nodes = session.state.nodes || [];
+                            PROJECT_DATA.tabs[0].edges = session.state.edges || [];
+                            console.log("Migrated legacy state to Tab system.");
+                        } else if (session.data) {
+                            PROJECT_DATA = session.data;
+                        }
+                    } catch(e) { console.warn("Saved session corrupted, resetting.", e); } 
+                }
+                
+                Tabs.init();
+                Tabs.loadTab(PROJECT_DATA.activeTab);
+                
+                HelperEngine.init({ autoScanOnInit: true }).then(() => { Theme.apply(); });
                 this.renderBrowser(); document.getElementById('search').addEventListener('input', e => this.renderBrowser(e.target.value));
+                this.initDragDrop();
             },
-            autoSave(snapshot = true) { if(snapshot) History.snapshot(); const session = { db: DB, state: { nodes: this.graph.nodes, edges: this.graph.edges, lastX: this.lastX } }; localStorage.setItem('ableton_session', JSON.stringify(session)); },
+            initDragDrop() {
+                const b = document.body;
+                b.addEventListener('dragover', e => { e.preventDefault(); b.classList.add('drag-active'); });
+                b.addEventListener('dragleave', e => { b.classList.remove('drag-active'); });
+                b.addEventListener('drop', e => {
+                    e.preventDefault(); b.classList.remove('drag-active');
+                    if(e.dataTransfer.files.length) {
+                        const file = e.dataTransfer.files[0];
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                            try {
+                                const content = ev.target.result;
+                                if(file.name.endsWith('.json')) {
+                                    const json = JSON.parse(content);
+                                    // Assume it's a tab export or project export
+                                    Tabs.addTab(file.name.replace('.json',''), json);
+                                } else if(file.name.endsWith('.html')) {
+                                    // Extract JSON from HTML vars
+                                    const match = content.match(/var PROJECT_DATA = (\{[\s\S]*?\})\;/);
+                                    if(match) {
+                                        const importedData = JSON.parse(match[1]);
+                                        // Merge imported tabs into current
+                                        importedData.tabs.forEach(t => {
+                                            t.id = 'imported_' + Math.random().toString(36).substr(2,5);
+                                            PROJECT_DATA.tabs.push(t);
+                                        });
+                                        Tabs.render();
+                                        alert("Imported tabs from HTML file.");
+                                    }
+                                }
+                            } catch(err) { alert("Failed to load file: " + err); }
+                        };
+                        reader.readAsText(file);
+                    }
+                });
+            },
+            autoSave(snapshot = true) { 
+                if(snapshot) History.snapshot(); 
+                Tabs.updateCurrentTabData();
+                const session = { db: DB, data: PROJECT_DATA }; 
+                localStorage.setItem('ableton_session', JSON.stringify(session)); 
+            },
             setMode(mode) {
                 this.mode = mode; document.body.classList.toggle('edit-mode', mode === 'edit');
                 document.getElementById('btn-run').className = mode === 'run' ? "flex-1 bg-white text-black font-bold py-1 rounded text-[10px]" : "flex-1 bg-[#333] text-white py-1 rounded text-[10px]";
